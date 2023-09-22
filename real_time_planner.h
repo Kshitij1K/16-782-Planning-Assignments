@@ -11,6 +11,8 @@
 struct Node;
 
 typedef std::shared_ptr<Node> NodePtr;
+typedef std::vector<std::vector<std::vector<NodePtr>>> NodeGrid;
+typedef std::pair<int, int> Point;
 
 struct Node {
   double cost_to_come_g = __DBL_MAX__;
@@ -28,10 +30,10 @@ struct Node {
   int goal_y;
 
   // data = <x, y, t>, goal = <goal_x, goal_y>
-  Node(std::tuple<int, int, int> data, std::pair<int, int> goal) {
-    x = std::get<0>(data);
-    y = std::get<1>(data);
-    t = std::get<2>(data);
+  Node(Point coordinates, Point goal, int time) {
+    x = coordinates.first;
+    y = coordinates.second;
+    t = time;
 
     goal_x = goal.first;
     goal_y = goal.second;
@@ -51,10 +53,53 @@ public:
 
 class RealTimePlanner {
 public:
-  std::priority_queue<NodePtr, std::vector<NodePtr>, NodeComparator> open_list;
+  RealTimePlanner(double *map, int collision_thresh, int x_size, int y_size,
+                  int target_steps, double *target_traj, int robotposeX,
+                  int robotposeY) {
+    map_ = map;
+    collision_thresh_ = collision_thresh;
+    x_size_ = x_size;
+    y_size_ = y_size;
+    target_steps_ = target_steps;
+    target_traj_ = target_traj;
 
-  
+    robot_pose_ = {robotposeX, robotposeY};
+    goal_ = {(int)target_traj[target_steps - 1],
+             (int)target_traj[target_steps - 1 + target_steps]};
 
+    std::vector<NodePtr> time(target_steps_, nullptr);
+    std::vector<std::vector<NodePtr>> time_and_y(y_size_, time);
+    node_grid_ = NodeGrid(x_size_, time_and_y);
+
+    NodePtr start = std::make_shared<Node>(Point(robotposeX, robotposeY), goal_, 0);
+    start->cost_to_come_g = 0;
+    start->cost_to_go_f = start->heuristic_cost_to_go_h;
+
+      open_list_.push(start);
+  }
+
+  void expandStates() {}
+
+  void updateHValues() {}
+
+  void decideNextMove() {}
+
+private:
+  std::priority_queue<NodePtr, std::vector<NodePtr>, NodeComparator> open_list_;
+  std::vector<NodePtr> closed_list_;
+  NodeGrid node_grid_;
+
+  double *map_;
+  int x_size_;
+  int y_size_;
+  int collision_thresh_;
+
+  int target_steps_;
+  double *target_traj_;
+
+  Point robot_pose_;
+
+  Point goal_;
 };
 
 #endif // REAL_TIME_PLANNER_H
