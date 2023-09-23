@@ -99,7 +99,7 @@ public:
     open_list_.push(start);
   }
 
-  bool expandStates(std::chrono::nanoseconds time_allowed) {
+  bool expandStates(std::chrono::milliseconds time_allowed) {
     if (open_list_.empty()) {
       return false;
     }
