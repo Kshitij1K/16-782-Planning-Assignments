@@ -99,8 +99,8 @@ void planner(double *map, int collision_thresh, int x_size, int y_size,
     action_ptr[0] = rtplanner.commands[curr_index].first;
     action_ptr[1] = rtplanner.commands[curr_index].second;
   } else {
-    action_ptr[0] = rtplanner.commands[0].first;
-    action_ptr[1] = rtplanner.commands[0].second;
+    action_ptr[0] = robotposeX;
+    action_ptr[1] = robotposeY;
   }
 
   // std::cout << ""

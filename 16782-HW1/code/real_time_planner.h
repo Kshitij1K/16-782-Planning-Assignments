@@ -122,7 +122,7 @@ public:
     std::cout << "The top most element is: \n";
     open_list_.top()->printNodeInfo();
 
-    expandStates(std::chrono::milliseconds(10000));
+    expandStates(std::chrono::milliseconds(1000000));
     constructPathFromPlan();
   }
 
@@ -209,10 +209,10 @@ public:
 
       std::cout << "Current size of the openset: " << open_list_.size() << "\n";
 
-      if (open_list_.size() > 20) {
-        std::cout << "Open set is too large! breaking\n";
-        break;
-      }
+      // if (open_list_.size() > 20) {
+      //   std::cout << "Open set is too large! breaking\n";
+      //   break;
+      // }
 
       std::cout << "-----------------------------------------------------------"
                    "----------------\n";
