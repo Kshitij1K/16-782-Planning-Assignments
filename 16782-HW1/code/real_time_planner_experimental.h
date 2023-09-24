@@ -1,6 +1,8 @@
 #ifndef REAL_TIME_PLANNER_H
 #define REAL_TIME_PLANNER_H
 
+#define DUMMY_GOAL_COORD -25
+
 #include <algorithm>
 #include <chrono>
 #include <iostream>
@@ -46,6 +48,13 @@ struct Node : public std::enable_shared_from_this<Node> {
     heuristic_cost_to_go_h = heuristicFunction(goal, goal_time);
   }
 
+  Node() {
+    x = DUMMY_GOAL_COORD;
+    y = DUMMY_GOAL_COORD;
+    t = -1;
+    heuristic_cost_to_go_h = 0;
+  }
+
   void setParent(NodePtr parent_to_set) {
     NodePtr this_node_ptr = shared_from_this();
 
@@ -72,16 +81,16 @@ struct Node : public std::enable_shared_from_this<Node> {
   }
 
   double heuristicFunction(Point goal, int goal_time) {
-    double result =
-        sqrt((x - goal_x) * (x - goal_x) + (y - goal_y) * (y - goal_y));
+    // double result =
+    //     sqrt((x - goal_x) * (x - goal_x) + (y - goal_y) * (y - goal_y));
 
-    int max_time_to_reach = goal_time - t;
-    if ((result / max_time_to_reach) > 1.0)
-      result = __DBL_MAX__;
+    // int max_time_to_reach = goal_time - t;
+    // if ((result / max_time_to_reach) > 1.0)
+    //   result = __DBL_MAX__;
 
-    return result;
+    // return result;
 
-    // return 0.0;
+    return 0.0;
   }
 };
 
@@ -149,6 +158,7 @@ public:
     auto time_elapsed = start_time - start_time;
 
     std::cout << "Expanding states\n";
+
     while (time_elapsed < time_allowed && !open_list_.empty()) {
       NodePtr curr_node = open_list_.top();
       open_list_.pop();
@@ -157,38 +167,55 @@ public:
       std::cout << "Node expanded:\n";
       curr_node->printNodeInfo();
 
-      Diff directions[9] = {{-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 1},
-                            {1, -1},  {1, 0},  {1, 1},  {0, 0}};
+      std::vector<Diff> directions;
+
+      if (curr_node->t < target_steps_) {
+        directions = {{-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 1},
+                      {1, -1},  {1, 0},  {1, 1},  {0, 0}};
+      }
 
       // std::cout << "Checking this node's neighbor\n";
       bool goal_found = false;
 
-      for (int dir = 0; dir < 9; dir++) {
-        int neighbor_x = curr_node->x + directions[dir].first;
-        int neighbor_y = curr_node->y + directions[dir].second;
+      if (isGoalNode(curr_node)) {
+        std::cout << "Yes, this is a goal node\n";
+        directions = {{-2, -2}};
+      }
+
+      for (int dir = 0; dir < directions.size(); dir++) {
+        int neighbor_x;
+        int neighbor_y;
+
+        if (directions[dir].first != -2) {
+          neighbor_x = curr_node->x + directions[dir].first;
+          neighbor_y = curr_node->y + directions[dir].second;
+        } else {
+          neighbor_x = DUMMY_GOAL_COORD;
+          neighbor_y = DUMMY_GOAL_COORD;
+        }
 
         if (getMapData(neighbor_x, neighbor_y) >= collision_thresh_) {
-          std::cout << "result - " << getMapData(neighbor_x, neighbor_y)
-                    << "\n";
+          // std::cout << "result - " << getMapData(neighbor_x, neighbor_y)
+          // << "\n";
           continue;
         }
 
-        NodePtr neighbor;
-        if ((getNodeAt(neighbor_x, neighbor_y, curr_node->t + 1) == nullptr)) {
+        NodePtr neighbor = getNodeAt(neighbor_x, neighbor_y, curr_node->t + 1);
+        if ((neighbor == nullptr)) {
           addNode(std::make_shared<Node>(Point(neighbor_x, neighbor_y), goal_,
                                          curr_node->t + 1, target_steps_));
-          std::cout << "Node added\n";
+          // std::cout << "Node added\n";
+          neighbor = getNodeAt(neighbor_x, neighbor_y, curr_node->t + 1);
         }
 
-        neighbor = getNodeAt(neighbor_x, neighbor_y, curr_node->t + 1);
-        std::cout << "Currently checking neighbor:\n";
-        neighbor->printNodeInfo();
+        // std::cout << "Currently checking neighbor:\n";
+        // neighbor->printNodeInfo();
 
         double tentative_cost_to_come_g =
             curr_node->cost_to_come_g + getMapData(neighbor->x, neighbor->y);
 
-        std::cout << "tentative g cost: " << tentative_cost_to_come_g
-                  << "; neighbor's g cost" << neighbor->cost_to_come_g << "\n";
+        // std::cout << "tentative g cost: " << tentative_cost_to_come_g
+        // << "; neighbor's g cost" << neighbor->cost_to_come_g << "\n";
 
         if (tentative_cost_to_come_g < neighbor->cost_to_come_g) {
           // std::cout << "Setting the parent of this neigbor to the current
@@ -200,11 +227,11 @@ public:
           neighbor->cost_to_go_f =
               neighbor->cost_to_come_g + neighbor->heuristic_cost_to_go_h;
 
-          std::cout << "Now the neigbor is\n";
-          neighbor->printNodeInfo();
+          // std::cout << "Now the neigbor is\n";
+          // neighbor->printNodeInfo();
 
-          if (neighbor->x == goal_.first && neighbor->y == goal_.second &&
-              neighbor->t == target_steps_ - 5) {
+          if (neighbor->x == DUMMY_GOAL_COORD ||
+              neighbor->y == DUMMY_GOAL_COORD) {
             std::cout << "Found the goal!\n";
             goal_found = true;
             break;
@@ -213,6 +240,7 @@ public:
           if (!neighbor->is_on_open_list) {
             std::cout
                 << "This neighbor is going to be added to the open list\n";
+            neighbor->printNodeInfo();
             open_list_.push(neighbor);
             neighbor->is_on_open_list = true;
           }
@@ -225,7 +253,7 @@ public:
 
       std::cout << "Current size of the openset: " << open_list_.size() << "\n";
 
-      // if (open_list_.size() > 30) {
+      // if (open_list_.size() > 40) {
       //   std::cout << "Open set is too large! breaking\n";
       //   break;
       // }
@@ -244,10 +272,16 @@ public:
   // void decideNextMove() {}
 
   void constructPathFromPlan() {
-    NodePtr curr_node = getNodeAt(goal_.first, goal_.second, target_steps_ - 5);
+    // NodePtr curr_node = getNodeAt(goal_.first, goal_.second, target_steps_ -
+    // 5);
+    NodePtr curr_node =
+        getNodeAt(DUMMY_GOAL_COORD, DUMMY_GOAL_COORD, target_steps_ - 5)
+            ->parent;
 
-    if (curr_node == nullptr)
+    if (curr_node == nullptr){
+      std::cout << "No parent lol\n";
       return;
+    }
 
     std::cout << "Reconstructing path backwards from:\n";
     curr_node->printNodeInfo();
@@ -280,6 +314,10 @@ private:
   Point goal_;
 
   double getMapData(int x, int y) {
+    if (x == DUMMY_GOAL_COORD || y == DUMMY_GOAL_COORD) {
+      return 0;
+    }
+
     if (x >= x_size_ || x < 0 || y >= y_size_ || y < 0)
       return __DBL_MAX__;
 
@@ -295,6 +333,11 @@ private:
   }
 
   NodePtr getNodeAt(int x, int y, int t) {
+    if (x == DUMMY_GOAL_COORD || y == DUMMY_GOAL_COORD) {
+      static NodePtr dummy_goal = std::make_shared<Node>();
+      return dummy_goal;
+    }
+
     if (x >= x_size_ || x < 0 || y >= y_size_ || y < 0) {
       return nullptr;
     }
@@ -316,12 +359,18 @@ private:
     if (node->t >= target_steps_) {
       return false;
     }
-    
-    // (int)target_traj[target_steps - 1] - 1
-    bool x_pos_correct = (((int)target_traj_[node->t]) == node->x);
-    bool y_pos_correct = (((int)target_traj_[target_steps_ + node->t]) == node->y);
 
-    return x_pos_correct && y_pos_correct;
+    // (int)target_traj[target_steps - 1] - 1
+    int curr_t_goal_x = ((int)target_traj_[node->t]) - 1;
+    int curr_t_goal_y = ((int)target_traj_[target_steps_ + node->t]) - 1;
+
+    std::cout << "Goal at current time t=" << node->t << " is " << curr_t_goal_x
+              << ", " << curr_t_goal_y << "\n";
+    bool x_pos_correct = (curr_t_goal_x == node->x);
+    bool y_pos_correct = (curr_t_goal_y == node->y);
+    bool no_collision = getMapData(node->x, node->y) < collision_thresh_;
+
+    return x_pos_correct && y_pos_correct && no_collision;
     // return target_traj_
   }
 };
