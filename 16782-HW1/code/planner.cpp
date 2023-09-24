@@ -76,16 +76,34 @@ void planner(double *map, int collision_thresh, int x_size, int y_size,
   // Point goal((int)target_traj[target_steps - 1],
   //            (int)target_traj[target_steps - 1 + target_steps]);
 
-  static RealTimePlanner rtplanner(map, collision_thresh, x_size, y_size, target_steps,
-                            target_traj, robotposeX, robotposeY);
+  // std::cout << "-----------------MAP INFO--------------------"
+  //           << "\n";
+  // std::cout << "Map size: " << x_size << ", " << y_size << "\n";
+  // std::cout << "Total time" << target_steps << "\n";
 
-  rtplanner.expandStates(std::chrono::milliseconds(10000));
-  rtplanner.constructPathFromPlan();
+  static RealTimePlanner rtplanner(map, collision_thresh, x_size, y_size,
+                                   target_steps, target_traj, robotposeX,
+                                   robotposeY);
+
+  // rtplanner.expandStates(std::chrono::milliseconds(1));
+  // rtplanner.constructPathFromPlan();
+
+  // std::cout << "Current Robot Pose: " << robotposeX << ", " << robotposeY << "\n";
+  // std::cout << "Current Obj Pose: " << targetposeX << ", " << targetposeY << "\n";
 
   static int curr_index = rtplanner.commands.size() - 1;
+  
+  std::cout << "Number of commands left: " << curr_index << "\n";
 
-  action_ptr[0] = rtplanner.commands[curr_index].first;
-  action_ptr[1] = rtplanner.commands[curr_index].second;
+  if (curr_index >= 0) {
+    action_ptr[0] = rtplanner.commands[curr_index].first;
+    action_ptr[1] = rtplanner.commands[curr_index].second;
+  } else {
+    action_ptr[0] = rtplanner.commands[0].first;
+    action_ptr[1] = rtplanner.commands[0].second;
+  }
+
+  // std::cout << ""
 
   curr_index--;
   return;
