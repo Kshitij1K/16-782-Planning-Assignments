@@ -1,8 +1,14 @@
 MAP1:
-Killed
+target caught = 1
+time taken (s) = 5344
+moves made = 421
+path cost = 5344
 
 MAP2:
-Killed
+target caught = 1
+time taken (s) = 5244
+moves made = 1729
+path cost = 9.65852e+06
 
 MAP3:
 target caught = 1

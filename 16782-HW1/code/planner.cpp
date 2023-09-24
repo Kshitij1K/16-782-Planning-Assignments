@@ -68,10 +68,11 @@ void planner_greedy(double *map, int collision_thresh, int x_size, int y_size,
   return;
 }
 
-void planner(double *map, int collision_thresh, int x_size, int y_size,
-             int robotposeX, int robotposeY, int target_steps,
-             double *target_traj, int targetposeX, int targetposeY,
-             int curr_time, double *action_ptr) {
+void planner_experimental(double *map, int collision_thresh, int x_size,
+                          int y_size, int robotposeX, int robotposeY,
+                          int target_steps, double *target_traj,
+                          int targetposeX, int targetposeY, int curr_time,
+                          double *action_ptr) {
 
   // Point goal((int)target_traj[target_steps - 1],
   //            (int)target_traj[target_steps - 1 + target_steps]);
@@ -88,12 +89,13 @@ void planner(double *map, int collision_thresh, int x_size, int y_size,
   // rtplanner.expandStates(std::chrono::milliseconds(1));
   // rtplanner.constructPathFromPlan();
 
-  // std::cout << "Current Robot Pose: " << robotposeX << ", " << robotposeY << "\n";
-  // std::cout << "Current Obj Pose: " << targetposeX << ", " << targetposeY << "\n";
+  // std::cout << "Current Robot Pose: " << robotposeX << ", " << robotposeY <<
+  // "\n"; std::cout << "Current Obj Pose: " << targetposeX << ", " <<
+  // targetposeY << "\n";
 
   static int curr_index = rtplanner.commands.size() - 1;
-  
-  std::cout << "Number of commands left: " << curr_index << "\n";
+
+  // std::cout << "Number of commands left: " << curr_index << "\n";
 
   if (curr_index >= 0) {
     action_ptr[0] = rtplanner.commands[curr_index].first;
@@ -104,6 +106,29 @@ void planner(double *map, int collision_thresh, int x_size, int y_size,
   }
 
   // std::cout << ""
+
+  curr_index--;
+  return;
+}
+
+void planner(double *map, int collision_thresh, int x_size, int y_size,
+             int robotposeX, int robotposeY, int target_steps,
+             double *target_traj, int targetposeX, int targetposeY,
+             int curr_time, double *action_ptr) {
+
+  static RealTimePlanner rtplanner(map, collision_thresh, x_size, y_size,
+                                   target_steps, target_traj, robotposeX,
+                                   robotposeY);
+
+  static int curr_index = rtplanner.commands.size() - 1;
+
+  if (curr_index >= 0) {
+    action_ptr[0] = rtplanner.commands[curr_index].first;
+    action_ptr[1] = rtplanner.commands[curr_index].second;
+  } else {
+    action_ptr[0] = robotposeX;
+    action_ptr[1] = robotposeY;
+  }
 
   curr_index--;
   return;
