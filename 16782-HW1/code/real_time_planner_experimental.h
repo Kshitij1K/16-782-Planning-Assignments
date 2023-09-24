@@ -97,6 +97,7 @@ struct Node : public std::enable_shared_from_this<Node> {
 
     // return result;
 
+    double result =  __DBL_MAX__;
     for (int i = 0; i < total_time; i++) {
       int manhattan_distance = abs(x - target_trajectory[i]) +
                                abs(y - target_trajectory[total_time + i]);
@@ -105,11 +106,15 @@ struct Node : public std::enable_shared_from_this<Node> {
       int time_remaining = i - t;
 
       if (min_time_required < time_remaining) {
-        return 0.0;
+        continue;
+      }
+
+      if (min_time_required < result) {
+        result = min_time_required;
       }
     }
 
-    return __DBL_MAX__;
+    return 300*result;
   }
 };
 
@@ -284,6 +289,8 @@ public:
       time_elapsed = std::chrono::high_resolution_clock::now() - start_time;
     }
 
+    time_elapsed = std::chrono::high_resolution_clock::now() - start_time;
+    std::cout << "TOTAL TIME: " << std::chrono::duration<double>(time_elapsed).count() << "\n";
     return true;
   }
 
@@ -303,14 +310,17 @@ public:
       return;
     }
 
-    std::cout << "Reconstructing path backwards from:\n";
-    curr_node->printNodeInfo();
+    std::cout << "Reconstructing path\n";
+    // curr_node->printNodeInfo();
 
     while (curr_node->parent != nullptr) {
       commands.push_back({curr_node->x + 1, curr_node->y + 1});
-      curr_node = curr_node->parent;
       std::cout << "Added pose - " << commands.back().first << ", "
                 << commands.back().second << "\n";
+
+      std::cout << "Added node to plan\n";
+      curr_node->printNodeInfo();
+      curr_node = curr_node->parent;
     }
   }
 
@@ -381,13 +391,15 @@ private:
     }
 
     // (int)target_traj[target_steps - 1] - 1
-    int curr_t_goal_x = ((int)target_traj_[node->t]) - 1;
-    int curr_t_goal_y = ((int)target_traj_[target_steps_ + node->t]) - 1;
+    int max_time = (target_steps_-10 > 5) ? 5 : target_steps_-10;
+    int curr_t_target = (node->t + max_time) > 0 ? (node->t + max_time) : 0;
+    int target_x = ((int)target_traj_[curr_t_target]) - 1;
+    int target_y = ((int)target_traj_[curr_t_target + target_steps_]) - 1;
 
-    std::cout << "Goal at current time t=" << node->t << " is " << curr_t_goal_x
-              << ", " << curr_t_goal_y << "\n";
-    bool x_pos_correct = (curr_t_goal_x == node->x);
-    bool y_pos_correct = (curr_t_goal_y == node->y);
+    std::cout << "Goal at current time t=" << node->t << " is " << target_x
+              << ", " << target_y << "\n";
+    bool x_pos_correct = (target_x == node->x);
+    bool y_pos_correct = (target_y == node->y);
     bool no_collision = getMapData(node->x, node->y) < collision_thresh_;
 
     return x_pos_correct && y_pos_correct && no_collision;
