@@ -36,16 +36,23 @@ struct Node : public std::enable_shared_from_this<Node> {
 
   bool is_on_open_list = false;
 
+  double *target_trajectory;
+  int total_time;
+
   // data = <x, y, t>, goal = <goal_x, goal_y>
-  Node(Point coordinates, Point goal, int current_time, int goal_time) {
+  Node(Point coordinates, int current_time, int target_steps,
+       double *target_traj) {
     x = coordinates.first;
     y = coordinates.second;
     t = current_time;
 
-    goal_x = goal.first;
-    goal_y = goal.second;
+    total_time = target_steps;
+    target_trajectory = target_traj;
 
-    heuristic_cost_to_go_h = heuristicFunction(goal, goal_time);
+    // goal_x = goal.first;
+    // goal_y = goal.second;
+
+    heuristic_cost_to_go_h = heuristicFunction();
   }
 
   Node() {
@@ -80,7 +87,7 @@ struct Node : public std::enable_shared_from_this<Node> {
     }
   }
 
-  double heuristicFunction(Point goal, int goal_time) {
+  double heuristicFunction() {
     // double result =
     //     sqrt((x - goal_x) * (x - goal_x) + (y - goal_y) * (y - goal_y));
 
@@ -90,7 +97,19 @@ struct Node : public std::enable_shared_from_this<Node> {
 
     // return result;
 
-    return 0.0;
+    for (int i = 0; i < total_time; i++) {
+      int manhattan_distance = abs(x - target_trajectory[i]) +
+                               abs(y - target_trajectory[total_time + i]);
+
+      int min_time_required = manhattan_distance;
+      int time_remaining = i - t;
+
+      if (min_time_required < time_remaining) {
+        return 0.0;
+      }
+    }
+
+    return __DBL_MAX__;
   }
 };
 
@@ -133,7 +152,7 @@ public:
     //           << "\n";
 
     NodePtr start = std::make_shared<Node>(
-        Point(robotposeX - 1, robotposeY - 1), goal_, 0, target_steps_);
+        Point(robotposeX - 1, robotposeY - 1), 0, target_steps_, target_traj_);
     start->cost_to_come_g = 0;
     start->cost_to_go_f = start->heuristic_cost_to_go_h;
 
@@ -202,8 +221,9 @@ public:
 
         NodePtr neighbor = getNodeAt(neighbor_x, neighbor_y, curr_node->t + 1);
         if ((neighbor == nullptr)) {
-          addNode(std::make_shared<Node>(Point(neighbor_x, neighbor_y), goal_,
-                                         curr_node->t + 1, target_steps_));
+          addNode(std::make_shared<Node>(Point(neighbor_x, neighbor_y),
+                                         curr_node->t + 1, target_steps_,
+                                         target_traj_));
           // std::cout << "Node added\n";
           neighbor = getNodeAt(neighbor_x, neighbor_y, curr_node->t + 1);
         }
@@ -278,7 +298,7 @@ public:
         getNodeAt(DUMMY_GOAL_COORD, DUMMY_GOAL_COORD, target_steps_ - 5)
             ->parent;
 
-    if (curr_node == nullptr){
+    if (curr_node == nullptr) {
       std::cout << "No parent lol\n";
       return;
     }
