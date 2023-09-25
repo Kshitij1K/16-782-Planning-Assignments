@@ -75,35 +75,42 @@ public:
 
 class RealTimePlanner {
 public:
+  // TODO
+  bool plan(int time_remaining);
+  bool isMyPlanBetter(std::vector<Point> &original_plan, int start_index);
+
+  int time_taken_for_planning;
+
   RealTimePlanner(int *map, int collision_thresh, int x_size, int y_size,
-                  int target_steps, int *target_traj, int robotposeX,
-                  int robotposeY) {
+                  Point start, Point goal, int time_from_start_to_goal) {
     auto start_time = std::chrono::high_resolution_clock::now();
     map_ = map;
     collision_thresh_ = collision_thresh;
     x_size_ = x_size;
     y_size_ = y_size;
-    target_steps_ = target_steps;
-    target_traj_ = target_traj;
+    // target_steps_ = target_steps;
+    // target_traj_ = target_traj;
 
-    robot_pose_ = {robotposeX - 1, robotposeY - 1};
+    // robot_pose_ = {robotposeX - 1, robotposeY - 1};
+    robot_pose_ = start;
+    goal_ = goal;
 
-    for (int goal_idx = target_steps - 1; goal_idx >= 0; goal_idx--) {
-      int goal_x = target_traj[goal_idx] - 1;
-      int goal_y = target_traj[goal_idx + target_steps] - 1;
+    // for (int goal_idx = target_steps - 1; goal_idx >= 0; goal_idx--) {
+    //   int goal_x = target_traj[goal_idx] - 1;
+    //   int goal_y = target_traj[goal_idx + target_steps] - 1;
 
-      // Chebyshev distance
-      int dx = abs(robot_pose_.first - goal_x);
-      int dy = abs(robot_pose_.second - goal_y);
-      int min_dist_to_goal = (dx + dy) - (dx < dy ? dx : dy);
+    //   // Chebyshev distance
+    //   int dx = abs(robot_pose_.first - goal_x);
+    //   int dy = abs(robot_pose_.second - goal_y);
+    //   int min_dist_to_goal = (dx + dy) - (dx < dy ? dx : dy);
 
-      if (min_dist_to_goal < goal_idx + 1) {
-        goal_ = {target_traj[goal_idx] - 1,
-                 target_traj[goal_idx + target_steps] - 1};
+    //   if (min_dist_to_goal < goal_idx + 1) {
+    //     goal_ = {target_traj[goal_idx] - 1,
+    //              target_traj[goal_idx + target_steps] - 1};
 
-        break;
-      }
-    }
+    //     break;
+    //   }
+    // }
 
     for (double percent = 0; percent < 2.2; percent += 0.25) {
       std::cout << "Trying with transition cost: " << percent * collision_thresh
@@ -113,8 +120,9 @@ public:
       std::vector<std::vector<NodePtr>> time_and_y(y_size_, time);
       node_grid_ = NodeGrid(x_size_, time_and_y);
 
-      NodePtr start = std::make_shared<Node>(
-          Point(robotposeX - 1, robotposeY - 1), goal_, 0);
+      // NodePtr start = std::make_shared<Node>(
+      // Point(robotposeX - 1, robotposeY - 1), goal_, 0);
+      NodePtr start = std::make_shared<Node>(robot_pose_, goal_, 0);
       start->cost_to_come_g = 0;
       start->cost_to_go_f = start->heuristic_cost_to_go_h;
 
@@ -133,8 +141,10 @@ public:
           std::chrono::duration_cast<std::chrono::seconds>(time_elapsed)
               .count();
       std::cout << "Need to catch the target within "
-                << (target_steps - 1 - seconds_time_elapsed) << "s\n";
-      if (steps_to_goal < (target_steps - 1 - seconds_time_elapsed)) {
+                // << (target_steps - 1 - seconds_time_elapsed) << "s\n";
+                << time_from_start_to_goal << "s\n";
+      // if (steps_to_goal < (target_steps - 1 - seconds_time_elapsed)) {
+      if (steps_to_goal < time_from_start_to_goal) {
         std::cout << "Phew! can reach the target on time.\n";
         break;
       } else {
