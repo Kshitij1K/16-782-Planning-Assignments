@@ -87,7 +87,7 @@ int main(int argc, char *argv[])
     }
 
     int target_steps = traj.size();
-    double* target_traj = new double[2*target_steps];
+    int* target_traj = new int[2*target_steps];
     for (size_t i = 0; i < target_steps; ++i)
     {
         target_traj[i] = traj[i][0];
@@ -97,7 +97,7 @@ int main(int argc, char *argv[])
     std::cout << "target_steps: " << target_steps << std::endl;
 
     // read map
-    double* map = new double[x_size*y_size];
+    int* map = new int[x_size*y_size];
     for (size_t i=0; i<x_size; i++)
     {
         std::getline(myfile, line);
@@ -107,7 +107,7 @@ int main(int argc, char *argv[])
             double value;
             ss >> value;
 
-            map[j*x_size+i] = value;
+            map[j*x_size+i] = (int) value;
             if (j != y_size-1) ss.ignore();
         }
     }
@@ -117,13 +117,13 @@ int main(int argc, char *argv[])
 
     // CONTROL LOOP
     int curr_time = 0;
-    double* action_ptr = new double[2];
+    int* action_ptr = new int[2];
     int targetposeX, targetposeY;
     int newrobotposeX, newrobotposeY;
 
     int numofmoves = 0;
     bool caught = false;
-    double pathcost = 0;
+    int pathcost = 0;
 
     std::ofstream output_file("robot_trajectory.txt");
     if (!output_file.is_open()) {
@@ -137,12 +137,12 @@ int main(int argc, char *argv[])
     {
         auto start = std::chrono::high_resolution_clock::now();
 
-        targetposeX = (int) target_traj[curr_time];
-        targetposeY = (int) target_traj[curr_time + target_steps];
+        targetposeX = target_traj[curr_time];
+        targetposeY = target_traj[curr_time + target_steps];
         
         planner(map, collision_thresh, x_size, y_size, robotposeX, robotposeY, target_steps, target_traj, targetposeX, targetposeY, curr_time, action_ptr);
-        newrobotposeX = (int) action_ptr[0];
-        newrobotposeY = (int) action_ptr[1];
+        newrobotposeX = action_ptr[0];
+        newrobotposeY = action_ptr[1];
 
         if (newrobotposeX < 1 || newrobotposeX > x_size || newrobotposeY < 1 || newrobotposeY > y_size)
         {
@@ -184,8 +184,8 @@ int main(int argc, char *argv[])
 
         // check if target is caught
         float thresh = 0.5;
-        targetposeX = (int) target_traj[curr_time];
-        targetposeY = (int) target_traj[curr_time + target_steps];
+        targetposeX = target_traj[curr_time];
+        targetposeY = target_traj[curr_time + target_steps];
         if (abs(robotposeX - targetposeX) <= thresh && abs(robotposeY-targetposeY) <= thresh)
         {
             caught = true;
