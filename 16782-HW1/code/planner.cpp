@@ -4,7 +4,7 @@
  *
  *=================================================================*/
 #include "planner.h"
-#include "real_time_planner.h"
+#include "planner_v6.h"
 #include <math.h>
 
 #define GETMAPINDEX(X, Y, XSIZE, YSIZE) ((Y - 1) * XSIZE + (X - 1))
@@ -65,49 +65,6 @@ void planner_greedy(double *map, int collision_thresh, int x_size, int y_size,
   action_ptr[0] = robotposeX;
   action_ptr[1] = robotposeY;
 
-  return;
-}
-
-void planner_experimental(double *map, int collision_thresh, int x_size,
-                          int y_size, int robotposeX, int robotposeY,
-                          int target_steps, double *target_traj,
-                          int targetposeX, int targetposeY, int curr_time,
-                          double *action_ptr) {
-
-  // Point goal((int)target_traj[target_steps - 1],
-  //            (int)target_traj[target_steps - 1 + target_steps]);
-
-  // std::cout << "-----------------MAP INFO--------------------"
-  //           << "\n";
-  // std::cout << "Map size: " << x_size << ", " << y_size << "\n";
-  // std::cout << "Total time" << target_steps << "\n";
-
-  static RealTimePlanner rtplanner(map, collision_thresh, x_size, y_size,
-                                   target_steps, target_traj, robotposeX,
-                                   robotposeY);
-
-  // rtplanner.expandStates(std::chrono::milliseconds(1));
-  // rtplanner.constructPathFromPlan();
-
-  // std::cout << "Current Robot Pose: " << robotposeX << ", " << robotposeY <<
-  // "\n"; std::cout << "Current Obj Pose: " << targetposeX << ", " <<
-  // targetposeY << "\n";
-
-  static int curr_index = rtplanner.commands.size() - 1;
-
-  // std::cout << "Number of commands left: " << curr_index << "\n";
-
-  if (curr_index >= 0) {
-    action_ptr[0] = rtplanner.commands[curr_index].first;
-    action_ptr[1] = rtplanner.commands[curr_index].second;
-  } else {
-    action_ptr[0] = robotposeX;
-    action_ptr[1] = robotposeY;
-  }
-
-  // std::cout << ""
-
-  curr_index--;
   return;
 }
 
