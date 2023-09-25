@@ -47,7 +47,7 @@ struct Node : public std::enable_shared_from_this<Node> {
     goal_y = goal.second;
 
     // heuristic_cost_to_go_h =
-        // sqrt((x - goal_x) * (x - goal_x) + (y - goal_y) * (y - goal_y));
+    // sqrt((x - goal_x) * (x - goal_x) + (y - goal_y) * (y - goal_y));
 
     int dx = abs(x - goal_x);
     int dy = abs(y - goal_y);
@@ -94,10 +94,29 @@ public:
     target_traj_ = target_traj;
 
     robot_pose_ = {robotposeX - 1, robotposeY - 1};
-    goal_ = {(int)target_traj[target_steps - 1] - 1,
-             (int)target_traj[target_steps - 1 + target_steps] - 1};
 
-    for (double percent = 0; percent < 10.2; percent += 0.25) {
+    for (int goal_idx = target_steps - 1; goal_idx >= 0; goal_idx--) {
+      int goal_x = (int)target_traj[goal_idx] - 1;
+      int goal_y = (int)target_traj[goal_idx + target_steps] - 1;
+
+      int dx = abs(robot_pose_.first - goal_x);
+      int dy = abs(robot_pose_.second - goal_y);
+
+      // Chebyshev distance
+      int min_dist_to_goal = (dx + dy) - (dx < dy ? dx : dy);
+      // std::cout << "Goal point checked - " << goal_x << ", "
+                // << goal_y << "\n";
+      // std::cout << "Goal idx being checked " << goal_idx + 1 << "\n";
+      // std::cout << "min dist to goal " << min_dist_to_goal << "\n";
+      if (min_dist_to_goal < goal_idx + 1) {
+        goal_ = {(int)target_traj[goal_idx] - 1,
+                 (int)target_traj[goal_idx + target_steps] - 1};
+
+        break;
+      }
+    }
+
+    for (double percent = 0; percent < 2.2; percent += 0.25) {
       std::cout << "Trying with transition cost: " << percent * collision_thresh
                 << "\n";
 
@@ -118,7 +137,7 @@ public:
       expandStates(open_list, percent * collision_thresh);
       commands.clear();
       constructPathFromPlan();
-      int steps_to_goal = commands.size();
+      int steps_to_goal = commands.size() - 1;
       auto time_elapsed =
           (std::chrono::high_resolution_clock::now() - start_time);
       int seconds_time_elapsed =
