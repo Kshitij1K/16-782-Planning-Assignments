@@ -75,8 +75,8 @@ public:
 
 class RealTimePlanner {
 public:
-  RealTimePlanner(double *map, int collision_thresh, int x_size, int y_size,
-                  int target_steps, double *target_traj, int robotposeX,
+  RealTimePlanner(int *map, int collision_thresh, int x_size, int y_size,
+                  int target_steps, int *target_traj, int robotposeX,
                   int robotposeY) {
     auto start_time = std::chrono::high_resolution_clock::now();
     map_ = map;
@@ -89,8 +89,8 @@ public:
     robot_pose_ = {robotposeX - 1, robotposeY - 1};
 
     for (int goal_idx = target_steps - 1; goal_idx >= 0; goal_idx--) {
-      int goal_x = (int)target_traj[goal_idx] - 1;
-      int goal_y = (int)target_traj[goal_idx + target_steps] - 1;
+      int goal_x = target_traj[goal_idx] - 1;
+      int goal_y = target_traj[goal_idx + target_steps] - 1;
 
       // Chebyshev distance
       int dx = abs(robot_pose_.first - goal_x);
@@ -98,8 +98,8 @@ public:
       int min_dist_to_goal = (dx + dy) - (dx < dy ? dx : dy);
 
       if (min_dist_to_goal < goal_idx + 1) {
-        goal_ = {(int)target_traj[goal_idx] - 1,
-                 (int)target_traj[goal_idx + target_steps] - 1};
+        goal_ = {target_traj[goal_idx] - 1,
+                 target_traj[goal_idx + target_steps] - 1};
 
         break;
       }
@@ -138,7 +138,8 @@ public:
         std::cout << "Phew! can reach the target on time.\n";
         break;
       } else {
-        std::cout << "Uh oh! needs " << steps_to_goal << "s to catch the target.\n";
+        std::cout << "Uh oh! needs " << steps_to_goal
+                  << "s to catch the target.\n";
       }
     }
   }
@@ -215,13 +216,13 @@ public:
 private:
   NodeGrid node_grid_;
 
-  double *map_;
+  int *map_;
   int x_size_;
   int y_size_;
   int collision_thresh_;
 
   int target_steps_;
-  double *target_traj_;
+  int *target_traj_;
 
   Point robot_pose_;
 
