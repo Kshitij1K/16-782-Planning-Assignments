@@ -4,7 +4,7 @@
  *
  *=================================================================*/
 #include "planner.h"
-#include "real_time_planner_experimental.h"
+#include "planner_v3.h"
 #include <math.h>
 
 #define GETMAPINDEX(X, Y, XSIZE, YSIZE) ((Y - 1) * XSIZE + (X - 1))
@@ -19,10 +19,10 @@
 
 #define NUMOFDIRS 8
 
-void planner_greedy(double *map, int collision_thresh, int x_size, int y_size,
+void planner_greedy(int *map, int collision_thresh, int x_size, int y_size,
                     int robotposeX, int robotposeY, int target_steps,
                     double *target_traj, int targetposeX, int targetposeY,
-                    int curr_time, double *action_ptr) {
+                    int curr_time, int *action_ptr) {
   // 8-connected grid
   int dX[NUMOFDIRS] = {-1, -1, -1, 0, 0, 1, 1, 1};
   int dY[NUMOFDIRS] = {-1, 0, 1, -1, 1, -1, 0, 1};
@@ -68,10 +68,10 @@ void planner_greedy(double *map, int collision_thresh, int x_size, int y_size,
   return;
 }
 
-void planner(double *map, int collision_thresh, int x_size, int y_size,
+void planner(int *map, int collision_thresh, int x_size, int y_size,
              int robotposeX, int robotposeY, int target_steps,
-             double *target_traj, int targetposeX, int targetposeY,
-             int curr_time, double *action_ptr) {
+             int *target_traj, int targetposeX, int targetposeY,
+             int curr_time, int *action_ptr) {
 
   // for ()
 

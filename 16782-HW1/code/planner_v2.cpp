@@ -4,7 +4,7 @@
  *
  *=================================================================*/
 #include "planner.h"
-#include "planner_v1.h"
+#include "planner_v2.h"
 #include <math.h>
 
 #define GETMAPINDEX(X, Y, XSIZE, YSIZE) ((Y - 1) * XSIZE + (X - 1))

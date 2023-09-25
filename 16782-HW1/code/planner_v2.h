@@ -36,11 +36,11 @@ struct Node : public std::enable_shared_from_this<Node> {
 
   bool is_on_open_list = false;
 
-  double *target_trajectory;
+  int *target_trajectory;
   int total_time;
 
   Node(Point coordinates, int current_time, int target_steps,
-       double *target_traj) {
+       int *target_traj) {
     x = coordinates.first;
     y = coordinates.second;
     t = current_time;
@@ -73,7 +73,7 @@ struct Node : public std::enable_shared_from_this<Node> {
   }
 
   double heuristicFunction() {
-    double result =  __DBL_MAX__;
+    double result = __DBL_MAX__;
     for (int i = 0; i < total_time; i++) {
       int manhattan_distance = abs(x - target_trajectory[i]) +
                                abs(y - target_trajectory[total_time + i]);
@@ -90,7 +90,7 @@ struct Node : public std::enable_shared_from_this<Node> {
       }
     }
 
-    return 300*result;
+    return 300 * result;
   }
 };
 
@@ -105,8 +105,8 @@ public:
 
 class RealTimePlanner {
 public:
-  RealTimePlanner(double *map, int collision_thresh, int x_size, int y_size,
-                  int target_steps, double *target_traj, int robotposeX,
+  RealTimePlanner(int *map, int collision_thresh, int x_size, int y_size,
+                  int target_steps, int *target_traj, int robotposeX,
                   int robotposeY) {
     map_ = map;
     collision_thresh_ = collision_thresh;
@@ -241,13 +241,13 @@ private:
   std::list<NodePtr> closed_list_;
   NodeGrid node_grid_;
 
-  double *map_;
+  int *map_;
   int x_size_;
   int y_size_;
   int collision_thresh_;
 
   int target_steps_;
-  double *target_traj_;
+  int *target_traj_;
 
   Point robot_pose_;
 
@@ -296,7 +296,7 @@ private:
     }
 
     // (int)target_traj[target_steps - 1] - 1
-    int max_time = (target_steps_-10 > 5) ? 5 : target_steps_-10;
+    int max_time = (target_steps_ - 10 > 5) ? 5 : target_steps_ - 10;
     int curr_t_target = (node->t + max_time) > 0 ? (node->t + max_time) : 0;
     int target_x = ((int)target_traj_[curr_t_target]) - 1;
     int target_y = ((int)target_traj_[curr_t_target + target_steps_]) - 1;

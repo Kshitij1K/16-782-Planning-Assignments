@@ -36,7 +36,7 @@ struct Node : public std::enable_shared_from_this<Node> {
 
   bool is_on_open_list = false;
 
-  double *target_trajectory;
+  int *target_trajectory;
   int total_time;
 
   int max_possible_cost;
@@ -44,7 +44,7 @@ struct Node : public std::enable_shared_from_this<Node> {
 
   // data = <x, y, t>, goal = <goal_x, goal_y>
   Node(Point coordinates, int current_time, int target_steps,
-       double *target_traj, double collision_thresh, double diagonal_length) {
+       int *target_traj, int collision_thresh, double diagonal_length) {
     x = coordinates.first;
     y = coordinates.second;
     t = current_time;
@@ -204,8 +204,8 @@ public:
 
 class RealTimePlanner {
 public:
-  RealTimePlanner(double *map, int collision_thresh, int x_size, int y_size,
-                  int target_steps, double *target_traj, int robotposeX,
+  RealTimePlanner(int *map, int collision_thresh, int x_size, int y_size,
+                  int target_steps, int *target_traj, int robotposeX,
                   int robotposeY) {
     map_ = map;
     collision_thresh_ = collision_thresh;
@@ -504,14 +504,14 @@ private:
   std::list<NodePtr> closed_list_;
   NodeGrid node_grid_;
 
-  double *map_;
+  int *map_;
   int x_size_;
   int y_size_;
   int collision_thresh_;
   double diagonal_length;
 
   int target_steps_;
-  double *target_traj_;
+  int *target_traj_;
 
   Point robot_pose_;
 
