@@ -173,7 +173,7 @@ struct Node : public std::enable_shared_from_this<Node> {
 
       if (min_time_required < time_remaining) {
         // std::cout << "Does this ever run?\n";
-        std::cout << "mtr " << min_time_required << ", time_r " << time_remaining << "\n";
+        // std::cout << "mtr " << min_time_required << ", time_r " << time_remaining << "\n";
         return 0;
       }
 
