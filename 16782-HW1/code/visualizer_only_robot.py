@@ -57,13 +57,13 @@ if __name__ == "__main__":
     ax.imshow(costmap)
     
     line1, = ax.plot([], [], lw=2, marker='o', color='b', label='robot')
-    line2, = ax.plot([], [], lw=2, marker='o', color='r', label='target')
+    # line2, = ax.plot([], [], lw=2, marker='o', color='r', label='target')
     
     def init():
         line1.set_data([], [])
-        line2.set_data([], [])
-        return line1, line2
-        # return line1
+        # line2.set_data([], [])
+        # return line1, line2
+        return line1
         # return line2
     
     def update(frame):
@@ -71,13 +71,12 @@ if __name__ == "__main__":
         # line1.set_data([p['x'] for p in robot_trajectory[:frame+1]], [p['y'] for p in robot_trajectory[:frame+1]])
         
         t = robot_trajectory[frame+1]['t']
-        line2.set_data([p['x'] for p in target_trajectory], [p['y'] for p in target_trajectory])
+        # line2.set_data([p['x'] for p in target_trajectory], [p['y'] for p in target_trajectory])
         
         # plt.pause((robot_trajectory[frame+1]['t']-robot_trajectory[frame]['t'])/SPEEDUP)
-        plt.savefig('map_images/map' + str(sys.argv[2]) + '_both.png')
-
-        return line1, line2
-        # return line1
+        plt.savefig('map' + str(sys.argv[2]) + '_robot.png')
+        # return line1, line2
+        return line1
         # return line2
     
     ani = FuncAnimation(fig, update, frames=1, init_func=init, blit=False, interval=1)
