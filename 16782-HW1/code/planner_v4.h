@@ -93,6 +93,7 @@ public:
         std::vector<NodePtr> time(1, nullptr);
         std::vector<std::vector<NodePtr>> time_and_y(y_size_, time);
         node_grid_ = NodeGrid(x_size_, time_and_y);
+        open_list_ = OpenList();
 
         NodePtr start = std::make_shared<Node>(robot_pose_, goal_, 0);
         start->cost_to_come_g = 0;
@@ -122,6 +123,7 @@ public:
               current_time - start_time);
           time_taken_for_planning += time_elapsed.count();
           time_taken_for_planning /= num_iterations;
+          percent = 0;
           return true;
         }
       } else {
@@ -129,6 +131,7 @@ public:
       }
     }
 
+    percent = 0;
     return true;
   }
 
