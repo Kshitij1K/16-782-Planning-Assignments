@@ -88,25 +88,17 @@ public:
 
     for (; percent < 1.2; percent += 0.25) {
       num_iterations++;
-      std::cout << "Iteration started? " << iteration_started << "\n";
-      if (!iteration_started) {
-        std::cout << "Trying with transition cost: "
-                  << percent * collision_thresh_ << "\n";
 
+      if (!iteration_started) {
         std::vector<NodePtr> time(1, nullptr);
         std::vector<std::vector<NodePtr>> time_and_y(y_size_, time);
         node_grid_ = NodeGrid(x_size_, time_and_y);
 
-        // NodePtr start = std::make_shared<Node>(
-        // Point(robotposeX - 1, robotposeY - 1), goal_, 0);
         NodePtr start = std::make_shared<Node>(robot_pose_, goal_, 0);
         start->cost_to_come_g = 0;
         start->cost_to_go_f = start->heuristic_cost_to_go_h;
-
-        // return false;
         node_grid_[start->x][start->y][0] = start;
 
-        // OpenList open_list;
         open_list_.push(start);
         iteration_started = true;
       }
@@ -123,21 +115,14 @@ public:
         commands.clear();
         constructPathFromPlan();
         int steps_to_goal = int(commands.size()) - 1;
-        std::cout << "Need to catch the target within "
-                  // << (target_steps - 1 - seconds_time_elapsed) << "s\n";
-                  << max_plan_length_ << "s\n";
-        // if (steps_to_goal < (target_steps - 1 - seconds_time_elapsed)) {
+
         if (steps_to_goal >= 0 && steps_to_goal <= max_plan_length_) {
-          std::cout << "Phew! can reach the target on time.\n";
           auto current_time = std::chrono::high_resolution_clock::now();
           auto time_elapsed = std::chrono::duration_cast<milliseconds>(
               current_time - start_time);
           time_taken_for_planning += time_elapsed.count();
           time_taken_for_planning /= num_iterations;
           return true;
-        } else {
-          std::cout << "Uh oh! needs " << steps_to_goal
-                    << "s to catch the target.\n";
         }
       } else {
         return false;
@@ -150,57 +135,26 @@ public:
   bool isMyPlanBetter(std::vector<Point> &original_plan, int start_index,
                       int target_reach_time) {
     if (commands.size() == 0) {
-      std::cout << "command size is 0\n";
       return false;
     }
 
-    // std::cout << "------------------------------------------\n";
     // Calculate cost of original plan
     double original_cost = 0;
     int num_points_iterated = 0;
     for (int i = start_index; i < target_reach_time; i++) {
-      // std::cout << "Orig index and coord iterated - " << i << "; "
-                // << original_plan[i].first << ", " << original_plan[i].second
-                // << ". Value incurred - and cumulative cost"
-                // << getMapData(original_plan[i].first - 1,
-                              // original_plan[i].second - 1)
-                // << ", " << original_cost << "\n";
       original_cost +=
           getMapData(original_plan[i].first - 1, original_plan[i].second - 1);
       num_points_iterated++;
     }
 
-    // std::cout << "Calculate cost of new plan\n";
-    // std::cout << "NN------------------------------------------\n";
+    // Calculate cost of new plan
     double my_cost = 0;
     for (int i = 0; i < target_reach_time - start_index; i++) {
       int j = (i >= commands.size()) ? int(commands.size()) - 1 : i;
-      // std::cout << "J vals are " << j << "\n";
-
-      // std::cout << "My index and coord iterated - " << j << "; "
-                // << commands[j].first << ", " << commands[j].second
-                // << ". Value incurred - and cumulative cost"
-                // << getMapData(commands[j].first - 1, commands[j].second - 1)
-                // << ", " << my_cost << "\n";
       my_cost += getMapData(commands[j].first - 1, commands[j].second - 1);
     }
 
-    if (my_cost < original_cost) {
-      std::cout << "\n\n\nYES! Better plan. Original cost was " << original_cost
-                << " Whereas new plan's cost was " << my_cost;
-
-      // std::cout << "Start compare " << start_index << "\n";
-      // std::cout << "Num points being compared " << num_points_iterated << ", "
-                // << target_reach_time - start_index << "\n\n\n";
-    }
-
-    // std::cout << "------------------------------------------\n";
     return my_cost < original_cost;
-    // while (target_traj_[i] != )
-
-    // double my_cost = 0;
-    // for (int i = 0; )
-    // // Calculate cost of my plan
   }
 
   int time_taken_for_planning;
@@ -214,34 +168,8 @@ public:
     y_size_ = y_size;
     max_plan_length_ = max_plan_length;
     time_taken_for_planning = 0;
-    // target_steps_ = target_steps;
-    // target_traj_ = target_traj;
-
-    // robot_pose_ = {robotposeX - 1, robotposeY - 1};
     robot_pose_ = {start.first - 1, start.second - 1};
     goal_ = {goal.first - 1, goal.second - 1};
-
-    // std::cout << "\n\n\nSTART LOCATION Tried: " << robot_pose_.first << ", "
-    // << robot_pose_.second << "\n\n\n";
-    // std::cout << "\n\n\nGOAL LOCATION Tried: " << goal_.first << ", "
-    // << goal_.second << "\n\n\n";
-
-    // for (int goal_idx = target_steps - 1; goal_idx >= 0; goal_idx--) {
-    //   int goal_x = target_traj[goal_idx] - 1;
-    //   int goal_y = target_traj[goal_idx + target_steps] - 1;
-
-    //   // Chebyshev distance
-    //   int dx = abs(robot_pose_.first - goal_x);
-    //   int dy = abs(robot_pose_.second - goal_y);
-    //   int min_dist_to_goal = (dx + dy) - (dx < dy ? dx : dy);
-
-    //   if (min_dist_to_goal < goal_idx + 1) {
-    //     goal_ = {target_traj[goal_idx] - 1,
-    //              target_traj[goal_idx + target_steps] - 1};
-
-    //     break;
-    //   }
-    // }
   }
 
   bool expandStates(double transition_cost, int time_for_planning) {
@@ -296,16 +224,12 @@ public:
           }
 
           if (!neighbor->is_on_open_list) {
-            // std::cout << "pushing nei - " << neighbor->x << " " <<
-            // neighbor->y << "\n";
-
             open_list_.push(neighbor);
             neighbor->is_on_open_list = true;
           }
         }
       }
       if (goal_found) {
-        // std::cout << "YAY GOAL FOUND\n";
         break;
       }
     }
@@ -313,13 +237,11 @@ public:
   }
 
   void constructPathFromPlan() {
-    std::cout << "breakpoint\n";
     NodePtr curr_node = node_grid_[goal_.first][goal_.second][0];
 
     if (curr_node == nullptr)
       return;
 
-    // std::cout << "Path being constructed\n";
     while (curr_node->parent != nullptr) {
       commands.push_back({curr_node->x + 1, curr_node->y + 1});
       curr_node = curr_node->parent;

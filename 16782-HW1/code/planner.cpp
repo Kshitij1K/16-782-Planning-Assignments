@@ -19,7 +19,6 @@
 
 #define NUMOFDIRS 8
 
-// using std::chrono;
 void planner_greedy(int *map, int collision_thresh, int x_size, int y_size,
                     int robotposeX, int robotposeY, int target_steps,
                     int *target_traj, int targetposeX, int targetposeY,
@@ -109,7 +108,6 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
 
   if (!planner_prepared) {
     // Prepare next planner
-    std::cout << "TIME FOR PLANNING " << time_for_planning << "\n";
     plan_from_index = curr_time + time_for_planning;
 
     int start_idx = (plan_from_index >= target_steps) ? (target_steps - 1)
@@ -135,7 +133,7 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
   planning_complete = planner->plan(time_remaining);
 
   // Get estimate of time that took to plan
-  time_for_planning = (planner->time_taken_for_planning)/1000;
+  time_for_planning = (planner->time_taken_for_planning) / 1000;
 
   if (planning_complete) {
     // check the original path and the new path
@@ -145,8 +143,8 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
     if (!does_plan_exist) {
       replace_plan = planner->commands.size();
     } else {
-      replace_plan =
-          planner->isMyPlanBetter(robot_trajectory, plan_from_index + 1, goal_idx);
+      replace_plan = planner->isMyPlanBetter(robot_trajectory,
+                                             plan_from_index + 1, goal_idx);
     }
 
     if (replace_plan) {
@@ -170,7 +168,4 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
   // Do the action from the robot trajectory
   action_ptr[0] = robot_trajectory[curr_time + 1].first;
   action_ptr[1] = robot_trajectory[curr_time + 1].second;
-  std::cout << "ACTION TAKEN: " << action_ptr[0] << ", " << action_ptr[1]
-            << "\n";
-  std::cout << "CURR ROBOT: " << robotposeX << ", " << robotposeY << "\n";
 }
