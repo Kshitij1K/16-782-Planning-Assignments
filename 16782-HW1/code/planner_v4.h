@@ -22,13 +22,13 @@ typedef Point Diff;
 
 typedef std::chrono::milliseconds milliseconds;
 
-struct Node : public std::enable_shared_from_this<Node> {
+struct Node {
   double cost_to_come_g = __DBL_MAX__;
   double cost_to_go_f = __DBL_MAX__;
   double heuristic_cost_to_go_h = __DBL_MAX__;
 
   NodePtr parent = nullptr;
-  std::vector<NodePtr> children;
+  // std::vector<NodePtr> children;
 
   int x;
   int y;
@@ -54,17 +54,17 @@ struct Node : public std::enable_shared_from_this<Node> {
   }
 
   void setParent(NodePtr parent_to_set) {
-    NodePtr this_node_ptr = shared_from_this();
+    // NodePtr this_node_ptr = shared_from_this();
 
-    if (parent != nullptr) {
-      auto this_node_it = std::find(parent->children.begin(),
-                                    parent->children.end(), this_node_ptr);
-      parent->children.erase(this_node_it);
-    }
+    // if (parent != nullptr) {
+      // auto this_node_it = std::find(parent->children.begin(),
+                                    // parent->children.end(), this_node_ptr);
+      // parent->children.erase(this_node_it);
+    // }
 
     parent = parent_to_set;
 
-    parent->children.push_back(this_node_ptr);
+    // parent->children.push_back(this_node_ptr);
   }
 };
 
@@ -95,12 +95,18 @@ public:
         node_grid_ = NodeGrid(x_size_, time_and_y);
         open_list_ = OpenList();
 
-        NodePtr start = std::make_shared<Node>(robot_pose_, goal_, 0);
-        start->cost_to_come_g = 0;
-        start->cost_to_go_f = start->heuristic_cost_to_go_h;
-        node_grid_[start->x][start->y][0] = start;
+        // NodePtr start = std::make_shared<Node>(robot_pose_, goal_, 0);
+        // start->cost_to_come_g = 0;
+        // start->cost_to_go_f = start->heuristic_cost_to_go_h;
+        node_grid_[robot_pose_.first][robot_pose_.second][0] =
+            std::make_shared<Node>(robot_pose_, goal_, 0);
+        node_grid_[robot_pose_.first][robot_pose_.second][0]->cost_to_come_g =
+            0;
+        node_grid_[robot_pose_.first][robot_pose_.second][0]->cost_to_go_f =
+            node_grid_[robot_pose_.first][robot_pose_.second][0]
+                ->heuristic_cost_to_go_h;
 
-        open_list_.push(start);
+        open_list_.push(node_grid_[robot_pose_.first][robot_pose_.second][0]);
         iteration_started = true;
       }
 
@@ -108,6 +114,7 @@ public:
       auto time_elapsed =
           std::chrono::duration_cast<milliseconds>(current_time - start_time);
       int time_remaining = time_for_planning - time_elapsed.count();
+      std::cout << "openlist size" << open_list_.size() << "\n";
       bool iteration_complete =
           expandStates(percent * collision_thresh_, time_remaining);
 
@@ -123,7 +130,7 @@ public:
               current_time - start_time);
           time_taken_for_planning += time_elapsed.count();
           time_taken_for_planning /= num_iterations;
-          percent = 0;
+          // percent = 0;
           return true;
         }
       } else {
@@ -131,7 +138,7 @@ public:
       }
     }
 
-    percent = 0;
+    // percent = 0;
     return true;
   }
 
@@ -174,6 +181,8 @@ public:
     robot_pose_ = {start.first - 1, start.second - 1};
     goal_ = {goal.first - 1, goal.second - 1};
   }
+
+  RealTimePlanner() {}
 
   bool expandStates(double transition_cost, int time_for_planning) {
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -254,6 +263,19 @@ public:
   }
 
   std::vector<Point> commands;
+
+  ~RealTimePlanner() {
+    for (int i = 0; i < node_grid_.size(); i++) {
+      for (int j = 0; j < node_grid_[0].size(); j++) {
+        if (node_grid_[i][j][0] != nullptr) {
+          // node_grid_[i][j][0]->children.clear();
+          node_grid_[i][j][0]->parent = nullptr;
+        }
+        node_grid_[i][j].clear();
+      }
+      node_grid_[i].clear();
+    }
+  }
 
 private:
   NodeGrid node_grid_;
