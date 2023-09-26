@@ -76,20 +76,21 @@ void planner_greedy(int *map, int collision_thresh, int x_size, int y_size,
 
 int nextGoalIndex(int target_steps, int *target_traj, Point robot_pose,
                   int time_remaining) {
-  static int current_goal_idx = target_steps - 1;
+  static int current_goal_idx = target_steps + 1;
 
-  for (int i = current_goal_idx; i >= 0; i -= 2) {
+  for (int i = current_goal_idx - 2; i >= 0; i -= 2) {
     // Chebyshev distance
     int dx = abs(robot_pose.first - target_traj[i]);
     int dy = abs(robot_pose.second - target_traj[i]);
     int distance = (dx + dy) - (dx < dy ? dx : dy);
+    std::cout << "Checking goal index" << i << ", dis is " << distance << " \n";
 
-    if (distance < (time_remaining + 1)) {
+    if (distance <= (time_remaining)) {
       current_goal_idx = i;
       break;
     }
   }
-
+  std::cout << "settled on goal idx" << current_goal_idx << "\n";
   return current_goal_idx;
 }
 
@@ -102,55 +103,29 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
 
   static std::shared_ptr<RealTimePlanner> planner;
 
-  static std::vector<Point> robot_trajectory(target_steps,
+  static std::vector<Point> robot_trajectory(target_steps + 1,
                                              Point(robotposeX, robotposeY));
 
   static int plan_from_index = 0;
   static int time_for_planning = 0;
-  static int goal_idx =
-      nextGoalIndex(target_steps, target_traj, Point(robotposeX, robotposeY),
-                    target_steps - curr_time - 1);
+  static int goal_idx;
+  //  =
+      // nextGoalIndex(target_steps, target_traj, Point(robotposeX, robotposeY),
+                    // target_steps - curr_time - 1);
 
   static bool does_plan_exist = false;
 
-  if (planning_complete) {
-    // check the original path and the new path
-    // whichever is better, replace that in the robot trajectory
-    if (planner != nullptr) {
-      std::cout << "Checking if plan needs to be replaced\n";
-      bool replace_plan;
+  static bool planner_prepared = false;
 
-      if (!does_plan_exist) {
-        replace_plan = true;
-      } else {
-          replace_plan = planner->isMyPlanBetter(robot_trajectory, plan_from_index, goal_idx);
-      }
-
-      // bool replace_plan = true;
-      if (replace_plan) {
-        std::cout << "yes, Plan needs to be replaced\n";
-        int j = 0;
-        for (int i = plan_from_index; i < target_steps; i++) {
-
-          if (j >= int(planner->commands.size())) {
-            j = int(planner->commands.size()) - 1;
-          }
-
-          std::cout << "Robot trajectory size and i" << robot_trajectory.size()
-                    << ", " << i << "\n";
-          std::cout << "Command size and j" << planner->commands.size() << ", "
-                    << j << "\n";
-
-          robot_trajectory[i] = planner->commands[j];
-          j++;
-        }
-      }
-    }
-
-    // Plan next path
+  if (!planner_prepared) {
+    // Prepare next planner
     // Robot location = robot trajectory[curr time + estimate of time that would
     // be taken] Target location = target trajectory[the subsequent goal point]
-    int plan_from_index = curr_time + time_for_planning + 1;
+    std::cout << "TIME FOR PLANNING " << time_for_planning << "\n";
+    plan_from_index = curr_time + time_for_planning;
+    // std::cout << "components of plan from index " << curr_time << ", "
+    // << time_for_planning << "\n";
+    // std::cout << "Value of plan from index" << plan_from_index;
     int start_idx = (plan_from_index >= target_steps) ? (target_steps - 1)
                                                       : plan_from_index;
 
@@ -159,29 +134,84 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
                              target_steps - plan_from_index - 1);
     Point goal(target_traj[goal_idx], target_traj[goal_idx + target_steps]);
 
-    std::cout << "Initializing new planner\n";
+    // std::cout << "Initializing new planner\n";
     // Initialize planner
     planner =
         std::make_shared<RealTimePlanner>(map, collision_thresh, x_size, y_size,
                                           start, goal, goal_idx - start_idx);
-    std::cout << "Initialized new planner\n";
-    planning_complete = false;
+    // std::cout << "Initialized new planner\n";
+    // planning_complete = false;
+    planner_prepared = true;
   }
 
-  // Keep planning
+  // Run the planner
   // Time remaining for this = 800 - time elapsed
   auto current_time = std::chrono::high_resolution_clock::now();
   auto time_elapsed =
       std::chrono::duration_cast<milliseconds>(current_time - start_time);
   int time_remaining = 800 - time_elapsed.count();
-  std::cout << "Starting new plan\n";
+  // std::cout << "Starting new plan\n";
   planning_complete = planner->plan(time_remaining);
-  std::cout << "Made new plan\n";
+  // std::cout << "Made new plan\n";
 
   // Get estimate of time that took to plan
-  time_for_planning = planner->time_taken_for_planning;
+  time_for_planning = (planner->time_taken_for_planning)/1000;
+
+  if (planning_complete) {
+    // check the original path and the new path
+    // whichever is better, replace that in the robot trajectory
+    // if (planner != nullptr) {
+    // std::cout << "Checking if plan needs to be replaced\n";
+    bool replace_plan;
+
+    if (!does_plan_exist) {
+      replace_plan = planner->commands.size();
+    } else {
+      replace_plan =
+          planner->isMyPlanBetter(robot_trajectory, plan_from_index + 1, goal_idx);
+    }
+
+    // bool replace_plan = true;
+    if (replace_plan) {
+      // std::cout << "yes, Plan needs to be Replaced\n";
+      int j = 0;
+
+      // std::cout << "Inserting plan from index " << plan_from_index + 1 <<
+      // "\n";
+      for (int i = plan_from_index + 1; i <= target_steps; i++) {
+
+        if (j >= int(planner->commands.size())) {
+          j = int(planner->commands.size()) - 1;
+        }
+
+        // std::cout << "Robot trajectory size and i" << robot_trajectory.size()
+        // << ", " << i << "\n";
+        // std::cout << "Command size and j" << planner->commands.size() << ", "
+        // << j << "\n";
+
+        robot_trajectory[i] = planner->commands[j];
+        j++;
+      }
+      does_plan_exist = true;
+    }
+
+    // for (int i = 0; i < planner->commands.size(); i++) {
+      // std::cout << planner->commands[i].first << ", @"
+                // << planner->commands[i].second << "\n";
+    // }
+    // for (int i = 0; i < robot_trajectory.size(); i++) {
+      // std::cout << robot_trajectory[i].first << "@ " <<
+      // robot_trajectory[i].second
+                // << "\n";
+    // }
+    // Next planner needs to be prepared
+    planner_prepared = false;
+  }
 
   // Do the action from the robot trajectory
-  action_ptr[0] = robot_trajectory[curr_time].first;
-  action_ptr[1] = robot_trajectory[curr_time].second;
+  action_ptr[0] = robot_trajectory[curr_time + 1].first;
+  action_ptr[1] = robot_trajectory[curr_time + 1].second;
+  std::cout << "ACTION TAKEN: " << action_ptr[0] << ", " << action_ptr[1]
+            << "\n";
+  std::cout << "CURR ROBOT: " << robotposeX << ", " << robotposeY << "\n";
 }
