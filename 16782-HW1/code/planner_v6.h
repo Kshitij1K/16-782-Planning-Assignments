@@ -20,6 +20,8 @@ typedef std::priority_queue<NodePtr, std::vector<NodePtr>, NodeComparator>
 typedef std::pair<int, int> Point;
 typedef Point Diff;
 
+typedef std::chrono::milliseconds milliseconds;
+
 struct Node : public std::enable_shared_from_this<Node> {
   double cost_to_come_g = __DBL_MAX__;
   double cost_to_go_f = __DBL_MAX__;
@@ -76,24 +78,129 @@ public:
 class RealTimePlanner {
 public:
   // TODO
-  bool plan(int time_remaining);
-  bool isMyPlanBetter(std::vector<Point> &original_plan, int start_index);
+  bool plan(int time_for_planning) {
+    auto start_time = std::chrono::high_resolution_clock().now();
+
+    static bool iteration_started = false;
+    static double percent = 0;
+
+    static int num_iterations = 0;
+
+    for (; percent < 1.2; percent += 0.25) {
+      num_iterations++;
+      std::cout << "Iteration started? " << iteration_started << "\n";
+      if (!iteration_started) {
+        std::cout << "Trying with transition cost: "
+                  << percent * collision_thresh_ << "\n";
+
+        std::vector<NodePtr> time(1, nullptr);
+        std::vector<std::vector<NodePtr>> time_and_y(y_size_, time);
+        node_grid_ = NodeGrid(x_size_, time_and_y);
+
+        std::cout << "Node Grid made\n";
+        // NodePtr start = std::make_shared<Node>(
+        // Point(robotposeX - 1, robotposeY - 1), goal_, 0);
+        NodePtr start = std::make_shared<Node>(robot_pose_, goal_, 0);
+        start->cost_to_come_g = 0;
+        start->cost_to_go_f = start->heuristic_cost_to_go_h;
+
+        std::cout << "Iteration started\n" << start->x << ", " << start->y << "\n";
+        // ;
+
+        // return false;
+        node_grid_[start->x][start->y][0] = start;
+
+        // OpenList open_list;
+        open_list_.push(start);
+        iteration_started = true;
+      }
+
+      auto current_time = std::chrono::high_resolution_clock::now();
+      auto time_elapsed =
+          std::chrono::duration_cast<milliseconds>(current_time - start_time);
+      int time_remaining = time_for_planning - time_elapsed.count();
+      bool iteration_complete =
+          expandStates(percent * collision_thresh_, time_remaining);
+
+      if (iteration_complete) {
+        iteration_started = false;
+        commands.clear();
+        constructPathFromPlan();
+        int steps_to_goal = commands.size() - 1;
+        std::cout << "Need to catch the target within "
+                  // << (target_steps - 1 - seconds_time_elapsed) << "s\n";
+                  << max_plan_length_ << "s\n";
+        // if (steps_to_goal < (target_steps - 1 - seconds_time_elapsed)) {
+        if (steps_to_goal < max_plan_length_) {
+          std::cout << "Phew! can reach the target on time.\n";
+          auto current_time = std::chrono::high_resolution_clock::now();
+          auto time_elapsed = std::chrono::duration_cast<milliseconds>(
+              current_time - start_time);
+          time_taken_for_planning += time_elapsed.count();
+          time_taken_for_planning /= num_iterations;
+          return true;
+        } else {
+          std::cout << "Uh oh! needs " << steps_to_goal
+                    << "s to catch the target.\n";
+        }
+      } else {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  bool isMyPlanBetter(std::vector<Point> &original_plan, int start_index,
+                      int target_reach_time) {
+    // commands.size();
+    if (commands.size() == 0) {
+      std::cout << "command size is 0\n";
+      return false;
+    }
+
+    // Calculate cost of original plan
+    std::cout << "Calculate cost of original plan\n";
+    double original_cost = 0;
+    for (int i = start_index; i < target_reach_time; i++) {
+      original_cost +=
+          getMapData(original_plan[i].first, original_plan[i].second);
+    }
+
+    std::cout << "Calculate cost of new plan\n";
+    double my_cost = 0;
+    for (int i = 0; i < target_reach_time - start_index; i++) {
+      int j = (i >= commands.size()) ? int(commands.size()) - 1 : i;
+      my_cost += getMapData(commands[j].first - 1, commands[j].second - 1);
+    }
+
+    std::cout << "This works haha\n";
+
+    return my_cost < original_cost;
+    // while (target_traj_[i] != )
+
+    // double my_cost = 0;
+    // for (int i = 0; )
+    // // Calculate cost of my plan
+  }
 
   int time_taken_for_planning;
 
   RealTimePlanner(int *map, int collision_thresh, int x_size, int y_size,
-                  Point start, Point goal, int time_from_start_to_goal) {
+                  Point start, Point goal, int max_plan_length) {
     auto start_time = std::chrono::high_resolution_clock::now();
     map_ = map;
     collision_thresh_ = collision_thresh;
     x_size_ = x_size;
     y_size_ = y_size;
+    max_plan_length_ = max_plan_length;
+    time_taken_for_planning = 0;
     // target_steps_ = target_steps;
     // target_traj_ = target_traj;
 
     // robot_pose_ = {robotposeX - 1, robotposeY - 1};
-    robot_pose_ = start;
-    goal_ = goal;
+    robot_pose_ = {start.first - 1, start.second - 1};
+    goal_ = {goal.first - 1, goal.second - 1};
 
     // for (int goal_idx = target_steps - 1; goal_idx >= 0; goal_idx--) {
     //   int goal_x = target_traj[goal_idx] - 1;
@@ -111,53 +218,23 @@ public:
     //     break;
     //   }
     // }
-
-    for (double percent = 0; percent < 2.2; percent += 0.25) {
-      std::cout << "Trying with transition cost: " << percent * collision_thresh
-                << "\n";
-
-      std::vector<NodePtr> time(1, nullptr);
-      std::vector<std::vector<NodePtr>> time_and_y(y_size_, time);
-      node_grid_ = NodeGrid(x_size_, time_and_y);
-
-      // NodePtr start = std::make_shared<Node>(
-      // Point(robotposeX - 1, robotposeY - 1), goal_, 0);
-      NodePtr start = std::make_shared<Node>(robot_pose_, goal_, 0);
-      start->cost_to_come_g = 0;
-      start->cost_to_go_f = start->heuristic_cost_to_go_h;
-
-      node_grid_[start->x][start->y][0] = start;
-
-      OpenList open_list;
-      open_list.push(start);
-
-      expandStates(open_list, percent * collision_thresh);
-      commands.clear();
-      constructPathFromPlan();
-      int steps_to_goal = commands.size() - 1;
-      auto time_elapsed =
-          (std::chrono::high_resolution_clock::now() - start_time);
-      int seconds_time_elapsed =
-          std::chrono::duration_cast<std::chrono::seconds>(time_elapsed)
-              .count();
-      std::cout << "Need to catch the target within "
-                // << (target_steps - 1 - seconds_time_elapsed) << "s\n";
-                << time_from_start_to_goal << "s\n";
-      // if (steps_to_goal < (target_steps - 1 - seconds_time_elapsed)) {
-      if (steps_to_goal < time_from_start_to_goal) {
-        std::cout << "Phew! can reach the target on time.\n";
-        break;
-      } else {
-        std::cout << "Uh oh! needs " << steps_to_goal
-                  << "s to catch the target.\n";
-      }
-    }
   }
 
-  void expandStates(OpenList &open_list, double transition_cost) {
-    while (!open_list.empty()) {
-      NodePtr curr_node = open_list.top();
-      open_list.pop();
+  bool expandStates(double transition_cost, int time_for_planning) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    while (!open_list_.empty()) {
+      auto current_time = std::chrono::high_resolution_clock::now();
+      auto time_elapsed =
+          std::chrono::duration_cast<milliseconds>(current_time - start_time);
+
+      if (time_elapsed.count() > time_for_planning) {
+        return false;
+      }
+
+      // std::cout << "expanding states\n";
+
+      NodePtr curr_node = open_list_.top();
+      open_list_.pop();
       curr_node->is_on_open_list = false;
 
       Diff directions[8] = {{-1, -1}, {-1, 0}, {-1, 1}, {0, -1},
@@ -197,24 +274,26 @@ public:
           }
 
           if (!neighbor->is_on_open_list) {
-            open_list.push(neighbor);
+            open_list_.push(neighbor);
             neighbor->is_on_open_list = true;
           }
         }
       }
-
       if (goal_found) {
         break;
       }
     }
+    return true;
   }
 
   void constructPathFromPlan() {
+    std::cout << "breakpoint\n";
     NodePtr curr_node = node_grid_[goal_.first][goal_.second][0];
-
+    
     if (curr_node == nullptr)
       return;
 
+    std::cout << "Path being constructed\n";
     while (curr_node->parent != nullptr) {
       commands.push_back({curr_node->x + 1, curr_node->y + 1});
       curr_node = curr_node->parent;
@@ -225,11 +304,14 @@ public:
 
 private:
   NodeGrid node_grid_;
+  OpenList open_list_;
 
   int *map_;
   int x_size_;
   int y_size_;
   int collision_thresh_;
+
+  int max_plan_length_;
 
   int target_steps_;
   int *target_traj_;

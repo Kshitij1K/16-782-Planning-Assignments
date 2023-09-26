@@ -20,9 +20,6 @@
 #define NUMOFDIRS 8
 
 // using std::chrono;
-
-typedef std::chrono::milliseconds milliseconds;
-
 void planner_greedy(int *map, int collision_thresh, int x_size, int y_size,
                     int robotposeX, int robotposeY, int target_steps,
                     int *target_traj, int targetposeX, int targetposeY,
@@ -77,7 +74,24 @@ void planner_greedy(int *map, int collision_thresh, int x_size, int y_size,
 //   bool plan(int time_remaining);
 // };
 
-int nextGoalIndex(int target_steps, int *target_traj, Point robot_pose) {}
+int nextGoalIndex(int target_steps, int *target_traj, Point robot_pose,
+                  int time_remaining) {
+  static int current_goal_idx = target_steps - 1;
+
+  for (int i = current_goal_idx; i >= 0; i -= 2) {
+    // Chebyshev distance
+    int dx = abs(robot_pose.first - target_traj[i]);
+    int dy = abs(robot_pose.second - target_traj[i]);
+    int distance = (dx + dy) - (dx < dy ? dx : dy);
+
+    if (distance < (time_remaining + 1)) {
+      current_goal_idx = i;
+      break;
+    }
+  }
+
+  return current_goal_idx;
+}
 
 void planner(int *map, int collision_thresh, int x_size, int y_size,
              int robotposeX, int robotposeY, int target_steps, int *target_traj,
@@ -93,21 +107,39 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
 
   static int plan_from_index = 0;
   static int time_for_planning = 0;
+  static int goal_idx =
+      nextGoalIndex(target_steps, target_traj, Point(robotposeX, robotposeY),
+                    target_steps - curr_time - 1);
+
+  static bool does_plan_exist = false;
 
   if (planning_complete) {
     // check the original path and the new path
     // whichever is better, replace that in the robot trajectory
     if (planner != nullptr) {
-      bool replace_plan =
-          planner->isMyPlanBetter(robot_trajectory, plan_from_index);
+      std::cout << "Checking if plan needs to be replaced\n";
+      bool replace_plan;
 
+      if (!does_plan_exist) {
+        replace_plan = true;
+      } else {
+          replace_plan = planner->isMyPlanBetter(robot_trajectory, plan_from_index, goal_idx);
+      }
+
+      // bool replace_plan = true;
       if (replace_plan) {
+        std::cout << "yes, Plan needs to be replaced\n";
         int j = 0;
         for (int i = plan_from_index; i < target_steps; i++) {
 
           if (j >= int(planner->commands.size())) {
             j = int(planner->commands.size()) - 1;
           }
+
+          std::cout << "Robot trajectory size and i" << robot_trajectory.size()
+                    << ", " << i << "\n";
+          std::cout << "Command size and j" << planner->commands.size() << ", "
+                    << j << "\n";
 
           robot_trajectory[i] = planner->commands[j];
           j++;
@@ -123,13 +155,16 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
                                                       : plan_from_index;
 
     Point start = robot_trajectory[start_idx];
-    int goal_idx = nextGoalIndex(target_steps, target_traj, start);
+    goal_idx = nextGoalIndex(target_steps, target_traj, start,
+                             target_steps - plan_from_index - 1);
     Point goal(target_traj[goal_idx], target_traj[goal_idx + target_steps]);
 
+    std::cout << "Initializing new planner\n";
     // Initialize planner
     planner =
         std::make_shared<RealTimePlanner>(map, collision_thresh, x_size, y_size,
                                           start, goal, goal_idx - start_idx);
+    std::cout << "Initialized new planner\n";
     planning_complete = false;
   }
 
@@ -139,7 +174,10 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
   auto time_elapsed =
       std::chrono::duration_cast<milliseconds>(current_time - start_time);
   int time_remaining = 800 - time_elapsed.count();
+  std::cout << "Starting new plan\n";
   planning_complete = planner->plan(time_remaining);
+  std::cout << "Made new plan\n";
+
   // Get estimate of time that took to plan
   time_for_planning = planner->time_taken_for_planning;
 
