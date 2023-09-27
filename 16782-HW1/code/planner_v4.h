@@ -53,19 +53,7 @@ struct Node {
     heuristic_cost_to_go_h = (dx + dy) - (dx < dy ? dx : dy);
   }
 
-  void setParent(NodePtr parent_to_set) {
-    // NodePtr this_node_ptr = shared_from_this();
-
-    // if (parent != nullptr) {
-      // auto this_node_it = std::find(parent->children.begin(),
-                                    // parent->children.end(), this_node_ptr);
-      // parent->children.erase(this_node_it);
-    // }
-
-    parent = parent_to_set;
-
-    // parent->children.push_back(this_node_ptr);
-  }
+  void setParent(NodePtr parent_to_set) { parent = parent_to_set; }
 };
 
 class NodeComparator {
@@ -78,9 +66,8 @@ public:
 class RealTimePlanner {
 public:
   // TODO
-  bool  plan(int time_for_planning) {
+  bool plan(int time_for_planning) {
     auto start_time = std::chrono::high_resolution_clock().now();
-    std::cout << "START PLANNING\n";
 
     static bool iteration_started = false;
     static double percent = 0;
@@ -96,9 +83,6 @@ public:
         node_grid_ = NodeGrid(x_size_, time_and_y);
         open_list_ = OpenList();
 
-        // NodePtr start = std::make_shared<Node>(robot_pose_, goal_, 0);
-        // start->cost_to_come_g = 0;
-        // start->cost_to_go_f = start->heuristic_cost_to_go_h;
         node_grid_[robot_pose_.first][robot_pose_.second][0] =
             std::make_shared<Node>(robot_pose_, goal_, 0);
         node_grid_[robot_pose_.first][robot_pose_.second][0]->cost_to_come_g =
@@ -115,7 +99,6 @@ public:
       auto time_elapsed =
           std::chrono::duration_cast<milliseconds>(current_time - start_time);
       int time_remaining = time_for_planning - time_elapsed.count();
-      // std::cout << "Total time  " << time_remaining << "\n";
       bool iteration_complete =
           expandStates(percent * collision_thresh_, time_remaining);
 
@@ -131,7 +114,6 @@ public:
               current_time - start_time);
           time_taken_for_planning += time_elapsed.count();
           time_taken_for_planning /= num_iterations;
-          // percent = 0;
           return true;
         }
       } else {
@@ -139,7 +121,6 @@ public:
       }
     }
 
-    // percent = 0;
     return true;
   }
 
@@ -187,15 +168,11 @@ public:
 
   bool expandStates(double transition_cost, int time_for_planning) {
     auto start_time = std::chrono::high_resolution_clock::now();
-    // std::cout << "Expanding states - time available to me: " << time_for_planning << "\n";
 
     while (!open_list_.empty()) {
       auto current_time = std::chrono::high_resolution_clock::now();
       auto time_elapsed =
           std::chrono::duration_cast<milliseconds>(current_time - start_time);
-
-      // std::cout << "Time elapsed and time available" <<  time_elapsed.count() << " of " << time_for_planning << "\n"; 
-
       if (time_elapsed.count() > time_for_planning) {
         return false;
       }
@@ -254,10 +231,6 @@ public:
   }
 
   void constructPathFromPlan() {
-    std::cout << "Constructing path\n";
-    std::cout << "goal " << goal_.first << ", " << goal_.second << "\n";
-
-
     NodePtr curr_node = node_grid_[goal_.first][goal_.second][0];
     if (curr_node == nullptr)
       return;
@@ -268,7 +241,6 @@ public:
     }
 
     std::reverse(commands.begin(), commands.end());
-    std::cout << "Done making the path\n";
   }
 
   std::vector<Point> commands;
@@ -277,7 +249,6 @@ public:
     for (int i = 0; i < node_grid_.size(); i++) {
       for (int j = 0; j < node_grid_[0].size(); j++) {
         if (node_grid_[i][j][0] != nullptr) {
-          // node_grid_[i][j][0]->children.clear();
           node_grid_[i][j][0]->parent = nullptr;
         }
         node_grid_[i][j].clear();
@@ -311,6 +282,7 @@ private:
     return map_[(y * x_size_ + x)];
   }
 
+  // Deprecated
   inline Diff diffFromAToB(NodePtr A, NodePtr B) {
     return {B->x - A->x, B->y - A->y};
   }

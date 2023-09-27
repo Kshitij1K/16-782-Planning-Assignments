@@ -68,7 +68,6 @@ void planner_greedy(int *map, int collision_thresh, int x_size, int y_size,
   return;
 }
 
-// This is incorrect
 int nextGoalIndex(int target_steps, int *target_traj, Point robot_pose,
                   int current_time) {
   static int current_goal_idx = target_steps;
@@ -79,30 +78,24 @@ int nextGoalIndex(int target_steps, int *target_traj, Point robot_pose,
     int dy = abs(robot_pose.second - target_traj[i]);
     int distance = (dx + dy) - (dx < dy ? dx : dy);
 
-    std::cout << "distance " << distance << ", " << (i - current_time)
-              << ", i = " << i << "\n";
     if (distance <= (i - current_time)) {
       current_goal_idx = i;
       break;
     }
   }
 
-  std::cout << "Might try some other goal locations\n";
-
   if (current_goal_idx == (target_steps + 1)) {
     for (int i = current_goal_idx - 2; i >= 0; i -= 2) {
-      // Chebyshev distance
 
       if (i == target_steps) {
         continue;
       }
 
+      // Chebyshev distance
       int dx = abs(robot_pose.first - target_traj[i]);
       int dy = abs(robot_pose.second - target_traj[i]);
       int distance = (dx + dy) - (dx < dy ? dx : dy);
 
-      std::cout << "distance " << distance << ", " << (i - current_time)
-                << ", i = " << i << "\n";
       if (distance <= (i - current_time)) {
         current_goal_idx = i;
         break;
@@ -115,33 +108,15 @@ int nextGoalIndex(int target_steps, int *target_traj, Point robot_pose,
 
 bool isAdmissibleMove(Point start, Point goal) {
 
-  // std::cout << "?????????????\n";
-  // std::cout << "Checking admissibility, \n";
-  // std::cout << start.first << ", " << start.second << "\n";
-  // std::cout << goal.first << ", " << goal.second << "\n";
-
   bool x_move_possible = abs(start.first - goal.first) <= 1;
   bool y_move_possible = abs(start.second - goal.second) <= 1;
 
-  // std::cout << "Result : " << (x_move_possible && y_move_possible) << "\n";
-  // std::cout << "?????????????\n";
   return (x_move_possible && y_move_possible);
 }
 
 void planner(int *map, int collision_thresh, int x_size, int y_size,
              int robotposeX, int robotposeY, int target_steps, int *target_traj,
              int targetposeX, int targetposeY, int curr_time, int *action_ptr) {
-
-  // if (curr_time >= 10) {
-  //   action_ptr[0] = robotposeX;
-  //   action_ptr[1] = robotposeY;
-  //   std::cout << "Current time: " << curr_time << "\n";
-  //   std::cout << "Robot is going to move to - " << action_ptr[0] << ", "
-  //             << action_ptr[1] << " in the next step\n";
-  //   std::cout
-  //       <<
-  //       "---------------------------------------------------------------\n";
-  // }
 
   auto start_time = std::chrono::high_resolution_clock().now();
   static bool planning_complete = true;
@@ -162,7 +137,6 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
 
   if (!planner_prepared) {
     // Prepare next planner
-    // std::cout << "Time required previously\n";
     plan_from_index = curr_time + time_estimate_for_planning;
 
     start_idx = (plan_from_index >= target_steps) ? (target_steps - 1)
@@ -172,12 +146,6 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
     goal_idx = nextGoalIndex(target_steps, target_traj, start, plan_from_index);
     Point goal(target_traj[goal_idx], target_traj[goal_idx + target_steps]);
 
-    // Initialize planner
-    std::cout << "Next Planner prepared with start and goal time to be \n";
-    std::cout << start_idx << "," << goal_idx << "\n";
-    std::cout << "Time estimate for planning is " << time_estimate_for_planning
-              << "\n";
-    // << goal.second << "\n";
     planner = RealTimePlanner(map, collision_thresh, x_size, y_size, start,
                               goal, goal_idx - start_idx);
     planner_prepared = true;
@@ -185,7 +153,6 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
   }
 
   // Run the planner
-  std::cout << "Running the prepared planner\n";
   auto current_time = std::chrono::high_resolution_clock::now();
   auto time_elapsed =
       std::chrono::duration_cast<milliseconds>(current_time - start_time);
@@ -193,44 +160,16 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
   planning_complete = planner.plan(time_remaining);
   time_estimate_for_planning += 1;
 
-  // Get estimate of time that took to plan
-  // time_for_planning = (planner.time_taken_for_planning) / 1000;
-
   if (planning_complete) {
     // check the original path and the new path
     // whichever is better, replace that in the robot trajectory
-    // std::cout << "Planning complete\n";
     bool replace_plan;
-
-    // Point next_move = {-3, -3};
-    // if (planner.commands.size() != 0) {
-    //   next_move = planner.commands[0];
-    // }
-    // bool is_next_move_possible =
-    //     isAdmissibleMove({robotposeX, robotposeY}, next_move);
-    // bool can_robot_reach_target =
-    //     ((goal_idx - plan_from_index) >= planner.commands.size());
-    // bool is_plan_better =
-    //     planner.isMyPlanBetter(robot_trajectory, plan_from_index + 1,
-    //     goal_idx);
 
     if (!does_plan_exist) {
       replace_plan = planner.commands.size();
       start_idx = curr_time;
     } else {
-      // replace_plan =
-      // bool is_next_move_possible
-      // isAdmissibleMove({robotposeX, robotposeY}, planner.commands[0]);
-
       bool planning_done_in_time = (curr_time <= start_idx);
-
-      std::cout << "Curr time " << curr_time
-                << "; replacement is going to be done " << start_idx << "\n";
-
-      // if (!is_next_move_possible) {
-      // std::cout << "Why are moves not possible!!!!\n";
-      // std::cout << "Current robot time move time is " << curr_time << "\n";
-      // }
 
       bool can_robot_reach_target =
           ((goal_idx - plan_from_index) > planner.commands.size());
@@ -239,32 +178,8 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
 
       replace_plan =
           planning_done_in_time && can_robot_reach_target && is_plan_better;
-      std::cout << "Next move possible?: " << planning_done_in_time << "\n";
-      std::cout << "Can robot reach?: " << can_robot_reach_target << "\n";
-      std::cout << "is plan better?: " << is_plan_better << "\n";
     }
 
-    // Replace plan if (plan doesn't exist and a new plan is found) or a plan
-    // exists and all conditions are met
-
-    // if (!does_plan_exist) {
-    //   replace_plan = planner.commands.size();
-    // } else {
-    //   replace_plan = planner.isMyPlanBetter(robot_trajectory,
-    //                                         plan_from_index + 1, goal_idx);
-    // }
-
-    // // std::cout << "Current time is " << curr_time;
-    // // std::cout << ". Plan replacement begins from " << plan_from_index +
-    // 1
-    //           // << "\n";
-    // if (does_plan_exist && ((plan_from_index + 1) <= curr_time)) {
-    //   std::cout << "Plan is too old. Not replacing.\n";
-    //   replace_plan = false;
-    // } else {
-    //   std::cout << "No plan exists, or Plan is not too old. Can replace may
-    //   be\n";
-    // }
     if (replace_plan) {
       int j = 0;
 
@@ -278,13 +193,12 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
         j++;
       }
       does_plan_exist = true;
-      std::cout << "Plan replaced\n";
+      std::cout << "Better Plan found: Replacing.\n";
     }
     planner_prepared = false;
   }
 
-  // Do the action from the robot trajectory
-
+  // Do the action from the robot trajectory, with a final check just in case
   bool final_check = isAdmissibleMove(Point(robotposeX, robotposeY),
                                       robot_trajectory[curr_time + 1]);
 
@@ -295,6 +209,8 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
     std::cout << "Robot trajectory right before that "
               << robot_trajectory[curr_time].first << ", "
               << robot_trajectory[curr_time].second << "\n";
+    action_ptr[0] = robotposeX;
+    action_ptr[1] = robotposeY;
   }
 
   action_ptr[0] = robot_trajectory[curr_time + 1].first;
