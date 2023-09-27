@@ -78,8 +78,9 @@ public:
 class RealTimePlanner {
 public:
   // TODO
-  bool plan(int time_for_planning) {
+  bool  plan(int time_for_planning) {
     auto start_time = std::chrono::high_resolution_clock().now();
+    std::cout << "START PLANNING\n";
 
     static bool iteration_started = false;
     static double percent = 0;
@@ -114,7 +115,7 @@ public:
       auto time_elapsed =
           std::chrono::duration_cast<milliseconds>(current_time - start_time);
       int time_remaining = time_for_planning - time_elapsed.count();
-      std::cout << "openlist size" << open_list_.size() << "\n";
+      // std::cout << "Total time  " << time_remaining << "\n";
       bool iteration_complete =
           expandStates(percent * collision_thresh_, time_remaining);
 
@@ -186,10 +187,14 @@ public:
 
   bool expandStates(double transition_cost, int time_for_planning) {
     auto start_time = std::chrono::high_resolution_clock::now();
+    // std::cout << "Expanding states - time available to me: " << time_for_planning << "\n";
+
     while (!open_list_.empty()) {
       auto current_time = std::chrono::high_resolution_clock::now();
       auto time_elapsed =
           std::chrono::duration_cast<milliseconds>(current_time - start_time);
+
+      // std::cout << "Time elapsed and time available" <<  time_elapsed.count() << " of " << time_for_planning << "\n"; 
 
       if (time_elapsed.count() > time_for_planning) {
         return false;
@@ -249,8 +254,11 @@ public:
   }
 
   void constructPathFromPlan() {
-    NodePtr curr_node = node_grid_[goal_.first][goal_.second][0];
+    std::cout << "Constructing path\n";
+    std::cout << "goal " << goal_.first << ", " << goal_.second << "\n";
 
+
+    NodePtr curr_node = node_grid_[goal_.first][goal_.second][0];
     if (curr_node == nullptr)
       return;
 
@@ -260,6 +268,7 @@ public:
     }
 
     std::reverse(commands.begin(), commands.end());
+    std::cout << "Done making the path\n";
   }
 
   std::vector<Point> commands;

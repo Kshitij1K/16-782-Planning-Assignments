@@ -68,21 +68,48 @@ void planner_greedy(int *map, int collision_thresh, int x_size, int y_size,
   return;
 }
 
+// This is incorrect
 int nextGoalIndex(int target_steps, int *target_traj, Point robot_pose,
-                  int time_remaining) {
-  static int current_goal_idx = target_steps + 1;
-
-  for (int i = current_goal_idx - 2; i >= 0; i -= 2) {
+                  int current_time) {
+  static int current_goal_idx = target_steps;
+  
+  for (int i = current_goal_idx - 1; i >= 0; i -= 2) {
     // Chebyshev distance
     int dx = abs(robot_pose.first - target_traj[i]);
     int dy = abs(robot_pose.second - target_traj[i]);
     int distance = (dx + dy) - (dx < dy ? dx : dy);
 
-    if (distance <= (time_remaining)) {
+    std::cout << "distance " << distance << ", " << (i - current_time)
+              << ", i = " << i << "\n";
+    if (distance <= (i - current_time)) {
       current_goal_idx = i;
       break;
     }
   }
+
+  std::cout << "Might try some other goal locations\n";
+
+  if (current_goal_idx == (target_steps + 1)) {
+    for (int i = current_goal_idx - 2; i >= 0; i -= 2) {
+      // Chebyshev distance
+
+      if (i == target_steps) {
+        continue;
+      }
+
+      int dx = abs(robot_pose.first - target_traj[i]);
+      int dy = abs(robot_pose.second - target_traj[i]);
+      int distance = (dx + dy) - (dx < dy ? dx : dy);
+
+      std::cout << "distance " << distance << ", " << (i - current_time)
+                << ", i = " << i << "\n";
+      if (distance <= (i - current_time)) {
+        current_goal_idx = i;
+        break;
+      }
+    }
+  }
+
   return current_goal_idx;
 }
 
@@ -112,7 +139,8 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
   //   std::cout << "Robot is going to move to - " << action_ptr[0] << ", "
   //             << action_ptr[1] << " in the next step\n";
   //   std::cout
-  //       << "---------------------------------------------------------------\n";
+  //       <<
+  //       "---------------------------------------------------------------\n";
   // }
 
   auto start_time = std::chrono::high_resolution_clock().now();
@@ -124,8 +152,9 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
                                              Point(robotposeX, robotposeY));
 
   static int plan_from_index = 0;
-  static int time_for_planning = 0;
+  static int time_estimate_for_planning = 0;
   static int goal_idx;
+  static int start_idx;
 
   static bool does_plan_exist = false;
 
@@ -134,22 +163,25 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
   if (!planner_prepared) {
     // Prepare next planner
     // std::cout << "Time required previously\n";
-    plan_from_index = curr_time + time_for_planning;
+    plan_from_index = curr_time + time_estimate_for_planning;
 
-    int start_idx = (plan_from_index >= target_steps) ? (target_steps - 1)
-                                                      : plan_from_index;
+    start_idx = (plan_from_index >= target_steps) ? (target_steps - 1)
+                                                  : plan_from_index;
 
     Point start = robot_trajectory[start_idx];
-    goal_idx = nextGoalIndex(target_steps, target_traj, start,
-                             target_steps - plan_from_index - 1);
+    goal_idx = nextGoalIndex(target_steps, target_traj, start, plan_from_index);
     Point goal(target_traj[goal_idx], target_traj[goal_idx + target_steps]);
 
     // Initialize planner
-    std::cout << "Next Planner prepared with start and goal\n";
-    std::cout << start.first << "," << start.second <<"; " << goal.first << "," << goal.second << "\n";
+    std::cout << "Next Planner prepared with start and goal time to be \n";
+    std::cout << start_idx << "," << goal_idx << "\n";
+    std::cout << "Time estimate for planning is " << time_estimate_for_planning
+              << "\n";
+    // << goal.second << "\n";
     planner = RealTimePlanner(map, collision_thresh, x_size, y_size, start,
                               goal, goal_idx - start_idx);
     planner_prepared = true;
+    time_estimate_for_planning = 1;
   }
 
   // Run the planner
@@ -157,11 +189,12 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
   auto current_time = std::chrono::high_resolution_clock::now();
   auto time_elapsed =
       std::chrono::duration_cast<milliseconds>(current_time - start_time);
-  int time_remaining = 800 - time_elapsed.count();
+  int time_remaining = 750 - time_elapsed.count();
   planning_complete = planner.plan(time_remaining);
+  time_estimate_for_planning += 1;
 
   // Get estimate of time that took to plan
-  time_for_planning = (planner.time_taken_for_planning) / 1000;
+  // time_for_planning = (planner.time_taken_for_planning) / 1000;
 
   if (planning_complete) {
     // check the original path and the new path
@@ -183,17 +216,32 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
 
     if (!does_plan_exist) {
       replace_plan = planner.commands.size();
+      start_idx = curr_time;
     } else {
       // replace_plan =
-      bool is_next_move_possible =
-          isAdmissibleMove({robotposeX, robotposeY}, planner.commands[0]);
+      // bool is_next_move_possible
+      // isAdmissibleMove({robotposeX, robotposeY}, planner.commands[0]);
+
+      bool planning_done_in_time = (curr_time <= start_idx);
+
+      std::cout << "Curr time " << curr_time
+                << "; replacement is going to be done " << start_idx << "\n";
+
+      // if (!is_next_move_possible) {
+      // std::cout << "Why are moves not possible!!!!\n";
+      // std::cout << "Current robot time move time is " << curr_time << "\n";
+      // }
+
       bool can_robot_reach_target =
-          ((goal_idx - plan_from_index) >= planner.commands.size());
+          ((goal_idx - plan_from_index) > planner.commands.size());
       bool is_plan_better =
           planner.isMyPlanBetter(robot_trajectory, curr_time + 1, goal_idx);
 
       replace_plan =
-          is_next_move_possible && can_robot_reach_target && is_plan_better;
+          planning_done_in_time && can_robot_reach_target && is_plan_better;
+      std::cout << "Next move possible?: " << planning_done_in_time << "\n";
+      std::cout << "Can robot reach?: " << can_robot_reach_target << "\n";
+      std::cout << "is plan better?: " << is_plan_better << "\n";
     }
 
     // Replace plan if (plan doesn't exist and a new plan is found) or a plan
@@ -207,7 +255,8 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
     // }
 
     // // std::cout << "Current time is " << curr_time;
-    // // std::cout << ". Plan replacement begins from " << plan_from_index + 1
+    // // std::cout << ". Plan replacement begins from " << plan_from_index +
+    // 1
     //           // << "\n";
     // if (does_plan_exist && ((plan_from_index + 1) <= curr_time)) {
     //   std::cout << "Plan is too old. Not replacing.\n";
@@ -219,7 +268,7 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
     if (replace_plan) {
       int j = 0;
 
-      for (int i = curr_time + 1; i <= target_steps; i++) {
+      for (int i = start_idx + 1; i <= target_steps; i++) {
 
         if (j >= int(planner.commands.size())) {
           j = int(planner.commands.size()) - 1;
@@ -235,6 +284,19 @@ void planner(int *map, int collision_thresh, int x_size, int y_size,
   }
 
   // Do the action from the robot trajectory
+
+  bool final_check = isAdmissibleMove(Point(robotposeX, robotposeY),
+                                      robot_trajectory[curr_time + 1]);
+
+  if (!final_check) {
+    std::cout << "Code attempting to make illegal move\n";
+    std::cout << "Robot trajectory replaced from " << start_idx << "\n";
+    std::cout << "Current robot time  " << curr_time << "\n";
+    std::cout << "Robot trajectory right before that "
+              << robot_trajectory[curr_time].first << ", "
+              << robot_trajectory[curr_time].second << "\n";
+  }
+
   action_ptr[0] = robot_trajectory[curr_time + 1].first;
   action_ptr[1] = robot_trajectory[curr_time + 1].second;
   std::cout << "Current time: " << curr_time << "\n";
