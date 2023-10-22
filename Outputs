@@ -1,0 +1,53 @@
+RESULT - MAP9
+target caught = 1
+time taken (s) = 600
+moves made = 350
+path cost = 600
+
+RESULT - MAP8
+target caught = 1
+time taken (s) = 451
+moves made = 410
+path cost = 451
+
+RESULT - MAP7
+target caught = 1
+time taken (s) = 300
+moves made = 300
+path cost = 300
+
+RESULT - MAP6
+target caught = 1
+time taken (s) = 140
+moves made = 0
+path cost = 2800
+
+RESULT - MAP5
+target caught = 1
+time taken (s) = 150
+moves made = 150
+path cost = 2551
+
+RESULT - MAP4
+target caught = 1
+time taken (s) = 696
+moves made = 254
+path cost = 696
+
+RESULT - MAP3
+target caught = 1
+time taken (s) = 791
+moves made = 283
+path cost = 791
+
+RESULT - MAP2
+target caught = 1
+time taken (s) = 5012
+moves made = 1528
+path cost = 2000630
+
+RESULT - MAP1
+target caught = 1
+time taken (s) = 5344
+moves made = 421
+path cost = 5344

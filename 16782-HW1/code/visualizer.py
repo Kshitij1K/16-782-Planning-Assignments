@@ -41,11 +41,11 @@ def parse_robot_trajectory_file(filename):
     
     return robot_trajectory
 
-SPEEDUP = 200000
+SPEEDUP = 5000
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: python visualizer.py <map filename> <map number>")
+    if len(sys.argv) != 2:
+        print("Usage: python visualizer.py <map filename>")
         sys.exit(1)
     
     x_size, y_size, collision_threshold, robotX, robotY, target_trajectory, costmap = parse_mapfile(sys.argv[1])
@@ -63,24 +63,18 @@ if __name__ == "__main__":
         line1.set_data([], [])
         line2.set_data([], [])
         return line1, line2
-        # return line1
-        # return line2
     
     def update(frame):
-        line1.set_data([p['x'] for p in robot_trajectory], [p['y'] for p in robot_trajectory])
-        # line1.set_data([p['x'] for p in robot_trajectory[:frame+1]], [p['y'] for p in robot_trajectory[:frame+1]])
+        line1.set_data([p['x'] for p in robot_trajectory[:frame+1]], [p['y'] for p in robot_trajectory[:frame+1]])
         
         t = robot_trajectory[frame+1]['t']
-        line2.set_data([p['x'] for p in target_trajectory], [p['y'] for p in target_trajectory])
+        line2.set_data([p['x'] for p in target_trajectory[:t]], [p['y'] for p in target_trajectory[:t]])
         
-        # plt.pause((robot_trajectory[frame+1]['t']-robot_trajectory[frame]['t'])/SPEEDUP)
-        plt.savefig('map_images/map' + str(sys.argv[2]) + '_both.png')
-
+        plt.pause((robot_trajectory[frame+1]['t']-robot_trajectory[frame]['t'])/SPEEDUP)
+        
         return line1, line2
-        # return line1
-        # return line2
     
-    ani = FuncAnimation(fig, update, frames=1, init_func=init, blit=False, interval=1)
+    ani = FuncAnimation(fig, update, frames=len(robot_trajectory)-1, init_func=init, blit=False, interval=1)
 
     plt.legend()
     plt.show()
