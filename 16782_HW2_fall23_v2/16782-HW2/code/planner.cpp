@@ -1,3 +1,4 @@
+// clang-format off
 /*=================================================================
  *
  * planner.c
@@ -6,6 +7,7 @@
 #include <math.h>
 #include <random>
 #include <vector>
+#include <list>
 #include <array>
 #include <algorithm>
 
@@ -16,6 +18,10 @@
 #include <iostream> // cout, endl
 #include <fstream> // For reading/writing files
 #include <assert.h> 
+
+/* Custom Includes */
+#include <memory>
+#include <unordered_map>
 
 /* Input Arguments */
 #define	MAP_IN      prhs[0]
@@ -336,87 +342,294 @@ static void planner(
     
     return;
 }
+// clang-format on
+typedef std::vector<double> ContinuousArmCfg;
+typedef std::vector<int> DiscreteArmCfg;
 
+template <typename T>
+void makeVector(std::vector<T> &result, T *data, int size) {
+  result.reserve(size);
+
+  for (int i = 0; i < size; i++) {
+    result.push_back(data[size]);
+  }
+}
+
+// Parameters
+double resolution = 0.02; // radians per index
+int max_iters = 5000;
+int epsilon = 5;
+long int goal_distance_thresh = 5;
+long int seed = 234;
+
+DiscreteArmCfg discretizeArmConfig(const ContinuousArmCfg &input) {
+  DiscreteArmCfg result;
+  result.reserve(input.size());
+  for (int i = 0; i < input.size(); i++) {
+    result.push_back(std::floor(input[i] / resolution));
+  }
+
+  return result;
+}
+
+ContinuousArmCfg revertDiscretizationArmConfig(const DiscreteArmCfg &input) {
+  ContinuousArmCfg result;
+  result.reserve(input.size());
+  for (int i = 0; i < input.size(); i++) {
+    result.push_back(std::floor(input[i] * resolution));
+  }
+
+  return result;
+}
+
+bool IsValidArmConfiguration(const DiscreteArmCfg &q, double *map, int x_size,
+                             int y_size) {
+  ContinuousArmCfg q_cont = revertDiscretizationArmConfig(q);
+  // Seriously guys, its time to move on from malloc
+  double *q_dangerous = (double *)malloc(q_cont.size() * sizeof(double));
+  for (int i = 0; i < q_cont.size(); i++) {
+    q_dangerous[i] = q_cont[i];
+  }
+
+  bool result =
+      IsValidArmConfiguration(q_dangerous, q_cont.size(), map, x_size, y_size);
+  free(q_dangerous);
+  return result;
+}
 //*******************************************************************************************************************//
 //                                                                                                                   //
-//                                              RRT IMPLEMENTATION                                                   //
+//                                              RRT IMPLEMENTATION //
 //                                                                                                                   //
 //*******************************************************************************************************************//
 
-static void plannerRRT(
-    double *map,
-    int x_size,
-    int y_size,
-    double *armstart_anglesV_rad,
-    double *armgoal_anglesV_rad,
-    int numofDOFs,
-    double ***plan,
-    int *planlength)
-{
-    /* TODO: Replace with your implementation */
-    planner(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad, numofDOFs, plan, planlength);
+struct NodeData;
+
+typedef std::shared_ptr<NodeData> NodePtr;
+
+struct NodeData {
+  DiscreteArmCfg parent_;
+  std::list<DiscreteArmCfg> children_;
+};
+
+class NodeHash {
+  std::size_t operator()(const DiscreteArmCfg &arm_cfg) const noexcept {
+    std::string string_of_angles;
+
+    for (int i = 0; i < arm_cfg.size(); i++) {
+      string_of_angles.append(std::to_string(arm_cfg[i]));
+    }
+
+    return std::hash<std::string>{}(string_of_angles);
+  }
+};
+
+static DiscreteArmCfg randomCfgGenerator(int num_DOFs) {
+  static std::default_random_engine generator;
+  static bool is_seeded = false;
+  if (!is_seeded) {
+    generator.seed(seed);
+    is_seeded = true;
+  }
+  long int max = std::floor(2 * PI / resolution);
+  static std::uniform_int_distribution<> random_int_generator(0, max);
+
+  DiscreteArmCfg q;
+
+  for (int i = 0; i < num_DOFs; i++) {
+    q.push_back(random_int_generator(generator));
+  }
+}
+
+DiscreteArmCfg extendNewCfg(const DiscreteArmCfg &q_near,
+                            const DiscreteArmCfg &q_rand) {
+                              
+                            }
+
+long int distanceBetweenCfgs(const DiscreteArmCfg &q1,
+                             const DiscreteArmCfg &q2) {
+  long int distance = abs(q1[0] - q2[0]);
+
+  for (int i = 1; i < q1.size(); i++) {
+    if (abs(q1[i] - q2[i]) > distance) {
+      distance = abs(q1[i] - q2[i]);
+    }
+  }
+
+  return distance;
+}
+void generateFinalPlan(const std::list<DiscreteArmCfg> &reversed_plan,
+                       double ***plan_to_fill) {
+  if (reversed_plan.size() == 0) {
+    *plan_to_fill = NULL;
+    return;
+  }
+
+  int numDOFs = reversed_plan.front().size();
+  *plan_to_fill = (double **)malloc(numDOFs * sizeof(double *));
+  
+  int i = 0;
+  for (auto it_ = reversed_plan.rbegin(); it_ != reversed_plan.rend(); it_++) {
+    (*plan_to_fill)[i] = (double *)malloc(numDOFs * sizeof(double));
+    auto q_cont = revertDiscretizationArmConfig(*it_);
+
+    for (int j = 0; j < numDOFs; j++) {
+      (*plan_to_fill)[i][j] = q_cont[j];
+    }
+    i++;
+  }
+}
+
+class RRTree {
+public:
+  DiscreteArmCfg nearestNeighbor(const DiscreteArmCfg &q) {
+    long int distance = __INT64_MAX__;
+    DiscreteArmCfg nearest_neighbor;
+    for (auto it_ : node_map_) {
+      long int calculated_distance = distanceBetweenCfgs(it_.first, q);
+      if (calculated_distance < distance) {
+        nearest_neighbor = it_.first;
+        distance = calculated_distance;
+      }
+    }
+
+    return nearest_neighbor;
+  }
+
+  void addNode(DiscreteArmCfg &q) {
+    if (node_map_.find(q) != node_map_.end()) {
+      return;
+      std::cout << "Node is already added! Not adding a new node.\n";
+    }
+
+    node_map_.insert({q, std::make_shared<NodeData>()});
+  }
+
+  void setParent(DiscreteArmCfg &q, DiscreteArmCfg &parent) {
+    if (node_map_.find(q) == node_map_.end()) {
+      std::cout << "Node not found!\n";
+      return;
+    }
+
+    auto node = node_map_.at(q);
+
+    if (!node->parent_.empty()) {
+      // This means that the node already has a parent
+      auto previous_parent = node_map_.at(node->parent_);
+      previous_parent->children_.remove(q);
+    }
+
+    node->parent_ = parent;
+    node_map_[parent]->children_.push_back(q);
+  }
+
+  std::list<DiscreteArmCfg> generateReversedPlan(DiscreteArmCfg &goal) {
+    std::list<DiscreteArmCfg> reversed_plan;
+    reversed_plan.push_back(goal);
+    auto parent = node_map_.at(goal)->parent_;
+    while (parent.size() != 0) {
+      reversed_plan.push_back(parent);
+      parent = node_map_.at(reversed_plan.back())->parent_;
+    }
+
+    return reversed_plan;
+  }
+
+private:
+  std::unordered_map<DiscreteArmCfg, NodePtr, NodeHash> node_map_;
+};
+
+static void plannerRRT(double *map, int x_size, int y_size,
+                       double *armstart_anglesV_rad,
+                       double *armgoal_anglesV_rad, int numofDOFs,
+                       double ***plan, int *planlength) {
+  /* TODO: Replace with your implementation */
+  // planner(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad,
+  // numofDOFs, plan, planlength);
+
+  std::vector<double> map_vec;
+  makeVector(map_vec, map, x_size * y_size);
+
+  ContinuousArmCfg arm_start_cont;
+  makeVector(arm_start_cont, armstart_anglesV_rad, numofDOFs);
+  DiscreteArmCfg arm_start = discretizeArmConfig(arm_start_cont);
+
+  ContinuousArmCfg arm_goal_cont;
+  makeVector(arm_goal_cont, armgoal_anglesV_rad, numofDOFs);
+  DiscreteArmCfg arm_goal = discretizeArmConfig(arm_goal_cont);
+
+  RRTree rrtree;
+  rrtree.addNode(arm_start);
+
+  for (int iters = 0; iters < max_iters; iters++) {
+    bool is_q_valid = false;
+    DiscreteArmCfg q_rand;
+    while (!is_q_valid) {
+      q_rand = randomCfgGenerator(numofDOFs);
+      // Set is_q_valid
+      is_q_valid = IsValidArmConfiguration(q_rand, map, x_size, y_size);
+    }
+
+    DiscreteArmCfg q_near = rrtree.nearestNeighbor(q_rand);
+    DiscreteArmCfg q_new = extendNewCfg(q_near, q_rand);
+    rrtree.addNode(q_new);
+    rrtree.setParent(q_new, q_near);
+
+    if (distanceBetweenCfgs(q_new, arm_goal) < goal_distance_thresh) {
+      rrtree.addNode(arm_goal);
+      rrtree.setParent(arm_goal, q_new);
+      auto reversed_plan = rrtree.generateReversedPlan(arm_goal);
+      generateFinalPlan(reversed_plan, plan);
+      *planlength = reversed_plan.size();
+    }
+  }
 }
 
 //*******************************************************************************************************************//
 //                                                                                                                   //
-//                                         RRT CONNECT IMPLEMENTATION                                                //
+//                                         RRT CONNECT IMPLEMENTATION //
 //                                                                                                                   //
 //*******************************************************************************************************************//
 
-static void plannerRRTConnect(
-    double *map,
-    int x_size,
-    int y_size,
-    double *armstart_anglesV_rad,
-    double *armgoal_anglesV_rad,
-    int numofDOFs,
-    double ***plan,
-    int *planlength)
-{
-    /* TODO: Replace with your implementation */
-    planner(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad, numofDOFs, plan, planlength);
+static void plannerRRTConnect(double *map, int x_size, int y_size,
+                              double *armstart_anglesV_rad,
+                              double *armgoal_anglesV_rad, int numofDOFs,
+                              double ***plan, int *planlength) {
+  /* TODO: Replace with your implementation */
+  planner(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad,
+          numofDOFs, plan, planlength);
 }
 
 //*******************************************************************************************************************//
 //                                                                                                                   //
-//                                           RRT STAR IMPLEMENTATION                                                 //
+//                                           RRT STAR IMPLEMENTATION //
 //                                                                                                                   //
 //*******************************************************************************************************************//
 
-static void plannerRRTStar(
-    double *map,
-    int x_size,
-    int y_size,
-    double *armstart_anglesV_rad,
-    double *armgoal_anglesV_rad,
-    int numofDOFs,
-    double ***plan,
-    int *planlength)
-{
-    /* TODO: Replace with your implementation */
-    planner(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad, numofDOFs, plan, planlength);
+static void plannerRRTStar(double *map, int x_size, int y_size,
+                           double *armstart_anglesV_rad,
+                           double *armgoal_anglesV_rad, int numofDOFs,
+                           double ***plan, int *planlength) {
+  /* TODO: Replace with your implementation */
+  planner(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad,
+          numofDOFs, plan, planlength);
 }
 
 //*******************************************************************************************************************//
 //                                                                                                                   //
-//                                              PRM IMPLEMENTATION                                                   //
+//                                              PRM IMPLEMENTATION //
 //                                                                                                                   //
 //*******************************************************************************************************************//
 
-static void plannerPRM(
-    double *map,
-    int x_size,
-    int y_size,
-    double *armstart_anglesV_rad,
-    double *armgoal_anglesV_rad,
-    int numofDOFs,
-    double ***plan,
-    int *planlength)
-{
-    /* TODO: Replace with your implementation */
-    planner(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad, numofDOFs, plan, planlength);
+static void plannerPRM(double *map, int x_size, int y_size,
+                       double *armstart_anglesV_rad,
+                       double *armgoal_anglesV_rad, int numofDOFs,
+                       double ***plan, int *planlength) {
+  /* TODO: Replace with your implementation */
+  planner(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad,
+          numofDOFs, plan, planlength);
 }
 
+// clang-format off
 //*******************************************************************************************************************//
 //                                                                                                                   //
 //                                                MAIN FUNCTION                                                      //
