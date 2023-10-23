@@ -412,6 +412,7 @@ struct NodeData {
 };
 
 class NodeHash {
+public:
   std::size_t operator()(const DiscreteArmCfg &arm_cfg) const noexcept {
     std::string string_of_angles;
 
@@ -438,12 +439,32 @@ static DiscreteArmCfg randomCfgGenerator(int num_DOFs) {
   for (int i = 0; i < num_DOFs; i++) {
     q.push_back(random_int_generator(generator));
   }
+
+  return q;
 }
 
 DiscreteArmCfg extendNewCfg(const DiscreteArmCfg &q_near,
                             const DiscreteArmCfg &q_rand) {
-                              
-                            }
+  int max_angle_change = abs(q_near[0] - q_rand[0]);
+
+  for (int i = 0; i < q_near.size(); i++) {
+    if (max_angle_change < abs(q_near[i] - q_rand[i])) {
+      max_angle_change = abs(q_near[i] - q_rand[i]);
+    }
+  }
+
+  double percent_interpolate = (max_angle_change * 1.0) / epsilon;
+
+  DiscreteArmCfg q_new;
+
+  for (int i = 0; i < q_near.size(); i++) {
+    int diff = q_rand[i] - q_near[i];
+    int new_angle = std::floor(q_near[i] + percent_interpolate * diff);
+    q_new.push_back(new_angle);
+  }
+
+  return q_new;
+}
 
 long int distanceBetweenCfgs(const DiscreteArmCfg &q1,
                              const DiscreteArmCfg &q2) {
@@ -466,7 +487,7 @@ void generateFinalPlan(const std::list<DiscreteArmCfg> &reversed_plan,
 
   int numDOFs = reversed_plan.front().size();
   *plan_to_fill = (double **)malloc(numDOFs * sizeof(double *));
-  
+
   int i = 0;
   for (auto it_ = reversed_plan.rbegin(); it_ != reversed_plan.rend(); it_++) {
     (*plan_to_fill)[i] = (double *)malloc(numDOFs * sizeof(double));
