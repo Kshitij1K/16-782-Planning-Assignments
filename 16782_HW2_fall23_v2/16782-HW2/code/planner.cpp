@@ -351,21 +351,22 @@ void makeVector(std::vector<T> &result, T *data, int size) {
   result.reserve(size);
 
   for (int i = 0; i < size; i++) {
-    result.push_back(data[size]);
+    result.push_back(data[i]);
   }
 }
 
 // Parameters
 double resolution = 0.02; // radians per index
-int max_iters = 5000;
+int max_iters = 100000;
 int epsilon = 5;
-long int goal_distance_thresh = 5;
-long int seed = 234;
+long int goal_distance_thresh = 10;
+long int seed = 34234;
 
 DiscreteArmCfg discretizeArmConfig(const ContinuousArmCfg &input) {
   DiscreteArmCfg result;
   result.reserve(input.size());
   for (int i = 0; i < input.size(); i++) {
+    // std::cout << "Fegr " << input[i] << "\n";
     result.push_back(std::floor(input[i] / resolution));
   }
 
@@ -376,9 +377,8 @@ ContinuousArmCfg revertDiscretizationArmConfig(const DiscreteArmCfg &input) {
   ContinuousArmCfg result;
   result.reserve(input.size());
   for (int i = 0; i < input.size(); i++) {
-    result.push_back(std::floor(input[i] * resolution));
+    result.push_back(input[i] * resolution);
   }
-
   return result;
 }
 
@@ -424,6 +424,32 @@ public:
   }
 };
 
+void printCfg(const DiscreteArmCfg &q) {
+  if (q.size() == 0) {
+    std::cout << "q is empty!\n";
+    return;
+  }
+
+  for (int i = 0; i < int(q.size()) - 1; i++) {
+    std::cout << q[i] << ", ";
+  }
+
+  std::cout << q.back() << "\n";
+}
+
+void printCfg(const ContinuousArmCfg &q) {
+  if (q.size() == 0) {
+    std::cout << "q is empty!\n";
+    return;
+  }
+
+  for (int i = 0; i < int(q.size()) - 1; i++) {
+    std::cout << q[i] << ", ";
+  }
+
+  std::cout << q.back() << "\n";
+}
+
 static DiscreteArmCfg randomCfgGenerator(int num_DOFs) {
   static std::default_random_engine generator;
   static bool is_seeded = false;
@@ -453,15 +479,26 @@ DiscreteArmCfg extendNewCfg(const DiscreteArmCfg &q_near,
     }
   }
 
-  double percent_interpolate = (max_angle_change * 1.0) / epsilon;
+  // std::cout << "Max angle change is " << max_angle_change << "\n";
+
+  double percent_interpolate = (epsilon * 1.0) / max_angle_change;
+  // std::cout << "Percent interpolation to do is " << percent_interpolate <<
+  // "\n";
+
+  if (max_angle_change == 0 || percent_interpolate > 1) {
+    return q_rand;
+  }
 
   DiscreteArmCfg q_new;
 
+  // std::cout << "Calculating new angles\n";
   for (int i = 0; i < q_near.size(); i++) {
     int diff = q_rand[i] - q_near[i];
     int new_angle = std::floor(q_near[i] + percent_interpolate * diff);
+    // std::cout << new_angle << ", ";
     q_new.push_back(new_angle);
   }
+  // std::cout << "\n";
 
   return q_new;
 }
@@ -478,7 +515,7 @@ long int distanceBetweenCfgs(const DiscreteArmCfg &q1,
 
   return distance;
 }
-void generateFinalPlan(const std::list<DiscreteArmCfg> &reversed_plan,
+void generateFinalPlan(const std::list<ContinuousArmCfg> &reversed_plan,
                        double ***plan_to_fill) {
   if (reversed_plan.size() == 0) {
     *plan_to_fill = NULL;
@@ -486,17 +523,42 @@ void generateFinalPlan(const std::list<DiscreteArmCfg> &reversed_plan,
   }
 
   int numDOFs = reversed_plan.front().size();
-  *plan_to_fill = (double **)malloc(numDOFs * sizeof(double *));
+  *plan_to_fill = (double **)malloc((reversed_plan.size()) * sizeof(double *));
 
   int i = 0;
-  for (auto it_ = reversed_plan.rbegin(); it_ != reversed_plan.rend(); it_++) {
+  for (auto it_ = reversed_plan.rbegin(); (it_ != reversed_plan.rend());
+       it_++) {
     (*plan_to_fill)[i] = (double *)malloc(numDOFs * sizeof(double));
-    auto q_cont = revertDiscretizationArmConfig(*it_);
-
+    auto q_cont = *it_;
+    printCfg(q_cont);
     for (int j = 0; j < numDOFs; j++) {
       (*plan_to_fill)[i][j] = q_cont[j];
     }
     i++;
+  }
+
+  // Add the goal location
+  // (*plan_to_fill)[reversed_plan.size()] =
+  //     (double *)malloc(numDOFs * sizeof(double));
+  // for (int j = 0; j < numDOFs; j++) {
+  //   (*plan_to_fill)[reversed_plan.size()][j] = goal[j];
+  // }
+
+  bool print_plan = false;
+
+  if (print_plan) {
+    std::cout << "The reversed plan fed to this was-\n";
+    for (auto it : reversed_plan) {
+      printCfg(it);
+    }
+
+    std::cout << "Plan generated-\n";
+    for (int i = 0; i < reversed_plan.size(); i++) {
+      for (int j = 0; j < numDOFs; j++) {
+        std::cout << (*plan_to_fill)[i][j] << ", ";
+      }
+      std::cout << "\n";
+    }
   }
 }
 
@@ -517,11 +579,6 @@ public:
   }
 
   void addNode(DiscreteArmCfg &q) {
-    if (node_map_.find(q) != node_map_.end()) {
-      return;
-      std::cout << "Node is already added! Not adding a new node.\n";
-    }
-
     node_map_.insert({q, std::make_shared<NodeData>()});
   }
 
@@ -543,16 +600,28 @@ public:
     node_map_[parent]->children_.push_back(q);
   }
 
-  std::list<DiscreteArmCfg> generateReversedPlan(DiscreteArmCfg &goal) {
-    std::list<DiscreteArmCfg> reversed_plan;
-    reversed_plan.push_back(goal);
-    auto parent = node_map_.at(goal)->parent_;
-    while (parent.size() != 0) {
-      reversed_plan.push_back(parent);
-      parent = node_map_.at(reversed_plan.back())->parent_;
-    }
+  std::list<ContinuousArmCfg> generateReversedPlan(ContinuousArmCfg &goal,
+                                                   ContinuousArmCfg &start) {
+    std::list<ContinuousArmCfg> reversed_plan;
 
+    std::cout << "Start and Goal are:";
+    printCfg(discretizeArmConfig(start));
+    printCfg(discretizeArmConfig(goal));
+    std::cout << "\n";
+
+    reversed_plan.push_back(goal);
+    auto current = node_map_.at(discretizeArmConfig(goal))->parent_;
+
+    while (node_map_.at(current)->parent_.size() != 0) {
+      reversed_plan.push_back(revertDiscretizationArmConfig(current));
+      current = node_map_.at(current)->parent_;
+    }
+    reversed_plan.push_back(start);
     return reversed_plan;
+  }
+
+  bool doesNodeExist(const DiscreteArmCfg &q) {
+    return (node_map_.find(q) == node_map_.end());
   }
 
 private:
@@ -578,31 +647,71 @@ static void plannerRRT(double *map, int x_size, int y_size,
   makeVector(arm_goal_cont, armgoal_anglesV_rad, numofDOFs);
   DiscreteArmCfg arm_goal = discretizeArmConfig(arm_goal_cont);
 
+  std::cout << "All vectors made\n";
+
   RRTree rrtree;
   rrtree.addNode(arm_start);
+  std::cout << "Added start node: ";
+  printCfg(arm_start);
 
   for (int iters = 0; iters < max_iters; iters++) {
+    // std::cout <<
+    // "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+    //  "~~~~~~~~~~~~~~~~~~\n";
+
+    if ((iters % 100) == 0) {
+      std::cout << "Iteration: " << iters << "\n";
+    }
     bool is_q_valid = false;
     DiscreteArmCfg q_rand;
     while (!is_q_valid) {
       q_rand = randomCfgGenerator(numofDOFs);
+      // std::cout << "Random node generated with angles: ";
+      // printCfg(q_rand);
       // Set is_q_valid
       is_q_valid = IsValidArmConfiguration(q_rand, map, x_size, y_size);
+      // std::cout << "Is this node valid? " << is_q_valid << "\n";
     }
 
     DiscreteArmCfg q_near = rrtree.nearestNeighbor(q_rand);
+
+    // std::cout << "Nearest Neighbor found: ";
+    // printCfg(q_near);
+
     DiscreteArmCfg q_new = extendNewCfg(q_near, q_rand);
+
+    if ((!rrtree.doesNodeExist(q_new)) &&
+        IsValidArmConfiguration(q_new, map, x_size, y_size)) {
+      // std::cout << "This node has already been added or is invalid.\n";
+      continue;
+    }
+
     rrtree.addNode(q_new);
     rrtree.setParent(q_new, q_near);
+    // std::cout << "New node added with angles: ";
+    // printCfg(q_new);
+    // std::cout << "Its parent is set to: ";
+    // printCfg(q_near);
 
     if (distanceBetweenCfgs(q_new, arm_goal) < goal_distance_thresh) {
+      std::cout << "Reached goal\n";
       rrtree.addNode(arm_goal);
       rrtree.setParent(arm_goal, q_new);
-      auto reversed_plan = rrtree.generateReversedPlan(arm_goal);
+      auto reversed_plan =
+          rrtree.generateReversedPlan(arm_goal_cont, arm_start_cont);
       generateFinalPlan(reversed_plan, plan);
       *planlength = reversed_plan.size();
+      return;
+    } else {
+      // std::cout << "Didn't reach goal\n";
     }
   }
+
+  std::list<ContinuousArmCfg> default_plan;
+  default_plan.push_back(arm_goal_cont);
+  default_plan.push_back(arm_start_cont);
+  generateFinalPlan(default_plan, plan);
+  *planlength = 2;
 }
 
 //*******************************************************************************************************************//
