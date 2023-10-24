@@ -335,13 +335,14 @@ static void planner(
         }
         if(!IsValidArmConfiguration((*plan)[i], numofDOFs, map, x_size, y_size) && firstinvalidconf) {
             firstinvalidconf = 1;
-            printf("ERROR: Invalid arm configuration!!!\n");
+            // printf("ERROR: Invalid arm configuration!!!\n");
         }
     }    
     *planlength = numofsamples;
     
     return;
 }
+
 // clang-format on
 typedef std::vector<double> ContinuousArmCfg;
 typedef std::vector<int> DiscreteArmCfg;
@@ -357,7 +358,7 @@ void makeVector(std::vector<T> &result, T *data, int size) {
 
 // Parameters
 double resolution = 0.02; // radians per index
-int max_iters = 100000;
+int max_iters = 10000;
 int epsilon = 5;
 long int goal_distance_thresh = 10;
 long int seed = 34234;
@@ -395,6 +396,38 @@ bool IsValidArmConfiguration(const DiscreteArmCfg &q, double *map, int x_size,
       IsValidArmConfiguration(q_dangerous, q_cont.size(), map, x_size, y_size);
   free(q_dangerous);
   return result;
+}
+
+static bool validLine(double *map, int x_size, int y_size, DiscreteArmCfg start,
+                      DiscreteArmCfg end, int numofDOFs) {
+  double distance = 0;
+  int i, j;
+  for (j = 0; j < numofDOFs; j++) {
+    if (distance < fabs(start[j] - end[j]))
+      distance = fabs(start[j] - end[j]);
+  }
+  int numofsamples = (int)(distance / (PI / 20));
+  if (numofsamples < 2) {
+    printf("the arm is already at the goal\n");
+    return true;
+  }
+  int firstinvalidconf = 1;
+  for (i = 0; i < numofsamples; i++) {
+    DiscreteArmCfg intermediate;
+
+    for (j = 0; j < numofDOFs; j++) {
+      intermediate.push_back(start[j] + ((double)(i) / (numofsamples - 1)) *
+                                            (end[j] - start[j]));
+    }
+
+    if (!IsValidArmConfiguration(intermediate, map, x_size, y_size) &&
+        firstinvalidconf) {
+      firstinvalidconf = 1;
+      printf("ERROR: Invalid arm configuration!!!\n");
+      return false;
+    }
+  }
+  return true;
 }
 //*******************************************************************************************************************//
 //                                                                                                                   //
@@ -536,13 +569,6 @@ void generateFinalPlan(const std::list<ContinuousArmCfg> &reversed_plan,
     }
     i++;
   }
-
-  // Add the goal location
-  // (*plan_to_fill)[reversed_plan.size()] =
-  //     (double *)malloc(numDOFs * sizeof(double));
-  // for (int j = 0; j < numDOFs; j++) {
-  //   (*plan_to_fill)[reversed_plan.size()][j] = goal[j];
-  // }
 
   bool print_plan = false;
 
@@ -693,7 +719,7 @@ static void plannerRRT(double *map, int x_size, int y_size,
     // std::cout << "Its parent is set to: ";
     // printCfg(q_near);
 
-    if (distanceBetweenCfgs(q_new, arm_goal) < goal_distance_thresh) {
+    if (validLine(map, x_size, y_size, q_new, arm_goal, numofDOFs)) {
       std::cout << "Reached goal\n";
       rrtree.addNode(arm_goal);
       rrtree.setParent(arm_goal, q_new);
@@ -725,7 +751,7 @@ static void plannerRRTConnect(double *map, int x_size, int y_size,
                               double *armgoal_anglesV_rad, int numofDOFs,
                               double ***plan, int *planlength) {
   /* TODO: Replace with your implementation */
-  planner(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad,
+  plannerRRT(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad,
           numofDOFs, plan, planlength);
 }
 
@@ -740,7 +766,7 @@ static void plannerRRTStar(double *map, int x_size, int y_size,
                            double *armgoal_anglesV_rad, int numofDOFs,
                            double ***plan, int *planlength) {
   /* TODO: Replace with your implementation */
-  planner(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad,
+  plannerRRT(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad,
           numofDOFs, plan, planlength);
 }
 
@@ -755,7 +781,7 @@ static void plannerPRM(double *map, int x_size, int y_size,
                        double *armgoal_anglesV_rad, int numofDOFs,
                        double ***plan, int *planlength) {
   /* TODO: Replace with your implementation */
-  planner(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad,
+  plannerRRT(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad,
           numofDOFs, plan, planlength);
 }
 
