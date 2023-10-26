@@ -18,6 +18,8 @@
 #include <iostream> // cout, endl
 #include <fstream> // For reading/writing files
 #include <assert.h> 
+#include<chrono>
+#include<thread>
 
 /* Custom Includes */
 #include <memory>
@@ -358,10 +360,13 @@ void makeVector(std::vector<T> &result, T *data, int size) {
 
 // Parameters
 double resolution = 0.02; // radians per index
-int max_iters = 10000;
+int max_iters = 20000;
+// RRTStar takes 1 minute 30 seconds to run for max_iters = 25000
 int epsilon = 5;
 long int goal_distance_thresh = 10;
 long int seed = 34234;
+// long int max_num_neighbors = 100;
+long int max_neighbor_distance = 10;
 
 DiscreteArmCfg discretizeArmConfig(const ContinuousArmCfg &input) {
   DiscreteArmCfg result;
@@ -423,7 +428,7 @@ static bool validLine(double *map, int x_size, int y_size, DiscreteArmCfg start,
     if (!IsValidArmConfiguration(intermediate, map, x_size, y_size) &&
         firstinvalidconf) {
       firstinvalidconf = 1;
-      printf("ERROR: Invalid arm configuration!!!\n");
+      // printf("ERROR: Invalid arm configuration!!!\n" );
       return false;
     }
   }
@@ -441,7 +446,8 @@ typedef std::shared_ptr<NodeData> NodePtr;
 
 struct NodeData {
   DiscreteArmCfg parent_;
-  std::list<DiscreteArmCfg> children_;
+  // std::list<DiscreteArmCfg> children_;
+  long int cost;
 };
 
 class NodeHash {
@@ -590,6 +596,14 @@ void generateFinalPlan(const std::list<ContinuousArmCfg> &reversed_plan,
 
 class RRTree {
 public:
+  RRTree(ContinuousArmCfg start) {
+    start_ = start;
+    auto start_discrete = discretizeArmConfig(start_);
+    addNode(start_discrete, 0);
+    std::cout << "Added start node: ";
+    printCfg(start_discrete);
+  }
+
   DiscreteArmCfg nearestNeighbor(const DiscreteArmCfg &q) {
     long int distance = __INT64_MAX__;
     DiscreteArmCfg nearest_neighbor;
@@ -604,8 +618,22 @@ public:
     return nearest_neighbor;
   }
 
-  void addNode(DiscreteArmCfg &q) {
-    node_map_.insert({q, std::make_shared<NodeData>()});
+  std::list<DiscreteArmCfg> nearestNeighbors(const DiscreteArmCfg &q) {
+    std::list<DiscreteArmCfg> nearest_neighbors;
+    for (auto it_ : node_map_) {
+      long int calculated_distance = distanceBetweenCfgs(it_.first, q);
+      if (calculated_distance < max_neighbor_distance) {
+        nearest_neighbors.push_back(it_.first);
+      }
+    }
+
+    return nearest_neighbors;
+  }
+
+  void addNode(DiscreteArmCfg &q, long int cost) {
+    auto data = std::make_shared<NodeData>();
+    data->cost = cost;
+    node_map_.insert({q, data});
   }
 
   void setParent(DiscreteArmCfg &q, DiscreteArmCfg &parent) {
@@ -616,22 +644,21 @@ public:
 
     auto node = node_map_.at(q);
 
-    if (!node->parent_.empty()) {
-      // This means that the node already has a parent
-      auto previous_parent = node_map_.at(node->parent_);
-      previous_parent->children_.remove(q);
-    }
+    // if (!node->parent_.empty()) {
+    //   // This means that the node already has a parent
+    //   auto previous_parent = node_map_.at(node->parent_);
+    //   previous_parent->children_.remove(q);
+    // }
 
     node->parent_ = parent;
-    node_map_[parent]->children_.push_back(q);
+    // node_map_[parent]->children_.push_back(q);
   }
 
-  std::list<ContinuousArmCfg> generateReversedPlan(ContinuousArmCfg &goal,
-                                                   ContinuousArmCfg &start) {
+  std::list<ContinuousArmCfg> generateReversedPlan(ContinuousArmCfg &goal) {
     std::list<ContinuousArmCfg> reversed_plan;
 
     std::cout << "Start and Goal are:";
-    printCfg(discretizeArmConfig(start));
+    printCfg(discretizeArmConfig(start_));
     printCfg(discretizeArmConfig(goal));
     std::cout << "\n";
 
@@ -639,20 +666,46 @@ public:
     auto current = node_map_.at(discretizeArmConfig(goal))->parent_;
 
     while (node_map_.at(current)->parent_.size() != 0) {
+      std::cout << "Pushing back: ";
+      printCfg(current);
+
+      // std::this_thread::sleep_for(std::chrono::seconds(1));
       reversed_plan.push_back(revertDiscretizationArmConfig(current));
       current = node_map_.at(current)->parent_;
     }
-    reversed_plan.push_back(start);
+
+    reversed_plan.push_back(start_);
+    std::cout << "done pushing back\n";
     return reversed_plan;
   }
 
   bool doesNodeExist(const DiscreteArmCfg &q) {
-    return (node_map_.find(q) == node_map_.end());
+    return (node_map_.find(q) != node_map_.end());
+  }
+
+  inline long int getNodeCost(const DiscreteArmCfg &q) {
+    return node_map_.at(q)->cost;
   }
 
 private:
   std::unordered_map<DiscreteArmCfg, NodePtr, NodeHash> node_map_;
+  ContinuousArmCfg start_;
 };
+
+enum class ExtendResult { ADVANCED, REACHED, TRAPPED };
+
+ExtendResult extensionResult(double *map, int x_size, int y_size, int numofDOFs,
+                             DiscreteArmCfg q_near, DiscreteArmCfg q_new) {
+  if (validLine(map, x_size, y_size, q_near, q_new, numofDOFs)) {
+    if (q_near == q_new) {
+      return ExtendResult::REACHED;
+    } else {
+      return ExtendResult::ADVANCED;
+    }
+  } else {
+    return ExtendResult::TRAPPED;
+  }
+}
 
 static void plannerRRT(double *map, int x_size, int y_size,
                        double *armstart_anglesV_rad,
@@ -675,10 +728,7 @@ static void plannerRRT(double *map, int x_size, int y_size,
 
   std::cout << "All vectors made\n";
 
-  RRTree rrtree;
-  rrtree.addNode(arm_start);
-  std::cout << "Added start node: ";
-  printCfg(arm_start);
+  RRTree rrtree(arm_start_cont);
 
   for (int iters = 0; iters < max_iters; iters++) {
     // std::cout <<
@@ -706,13 +756,15 @@ static void plannerRRT(double *map, int x_size, int y_size,
 
     DiscreteArmCfg q_new = extendNewCfg(q_near, q_rand);
 
-    if ((!rrtree.doesNodeExist(q_new)) &&
-        IsValidArmConfiguration(q_new, map, x_size, y_size)) {
+    if ((rrtree.doesNodeExist(q_new)) ||
+        extensionResult(map, x_size, y_size, numofDOFs, q_near, q_new) ==
+            ExtendResult::TRAPPED) {
       // std::cout << "This node has already been added or is invalid.\n";
+      iters--;
       continue;
     }
 
-    rrtree.addNode(q_new);
+    rrtree.addNode(q_new, 0);
     rrtree.setParent(q_new, q_near);
     // std::cout << "New node added with angles: ";
     // printCfg(q_new);
@@ -721,10 +773,9 @@ static void plannerRRT(double *map, int x_size, int y_size,
 
     if (validLine(map, x_size, y_size, q_new, arm_goal, numofDOFs)) {
       std::cout << "Reached goal\n";
-      rrtree.addNode(arm_goal);
+      rrtree.addNode(arm_goal, 0);
       rrtree.setParent(arm_goal, q_new);
-      auto reversed_plan =
-          rrtree.generateReversedPlan(arm_goal_cont, arm_start_cont);
+      auto reversed_plan = rrtree.generateReversedPlan(arm_goal_cont);
       generateFinalPlan(reversed_plan, plan);
       *planlength = reversed_plan.size();
       return;
@@ -751,8 +802,156 @@ static void plannerRRTConnect(double *map, int x_size, int y_size,
                               double *armgoal_anglesV_rad, int numofDOFs,
                               double ***plan, int *planlength) {
   /* TODO: Replace with your implementation */
-  plannerRRT(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad,
-          numofDOFs, plan, planlength);
+  // plannerRRT(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad,
+  //            numofDOFs, plan, planlength);
+
+  std::vector<double> map_vec;
+  makeVector(map_vec, map, x_size * y_size);
+
+  ContinuousArmCfg arm_start_cont;
+  makeVector(arm_start_cont, armstart_anglesV_rad, numofDOFs);
+  DiscreteArmCfg arm_start = discretizeArmConfig(arm_start_cont);
+
+  ContinuousArmCfg arm_goal_cont;
+  makeVector(arm_goal_cont, armgoal_anglesV_rad, numofDOFs);
+  DiscreteArmCfg arm_goal = discretizeArmConfig(arm_goal_cont);
+
+  std::cout << "All vectors made\n";
+
+  auto rrtree_A = std::make_shared<RRTree>(arm_start_cont);
+  auto rrtree_B = std::make_shared<RRTree>(arm_goal_cont);
+  // RRTree rrtree_goal;
+  // rrtree_A->addNode(arm_start, 0);
+  // std::cout << "Added start node to tree 1:";
+  // printCfg(arm_start);
+
+  // rrtree_B->addNode(arm_goal, 0);
+  // std::cout << "Added goal node to tree 2:";
+  // printCfg(arm_goal);
+
+  long int num_swaps = 0;
+
+  for (int iters = 0; iters < max_iters; iters++) {
+    std::cout << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+                 "~~~~~~~~~~~~~~~~~~\n";
+
+    // if ((iters % 100) == 0) {
+    std::cout << "Iteration: " << iters << "\n";
+    // }
+    bool is_q_valid = false;
+    DiscreteArmCfg q_rand;
+    while (!is_q_valid) {
+      q_rand = randomCfgGenerator(numofDOFs);
+      // std::cout << "Random node generated with angles: ";
+      // printCfg(q_rand);
+      // Set is_q_valid
+      is_q_valid = IsValidArmConfiguration(q_rand, map, x_size, y_size);
+      // std::cout << "Is this node valid? " << is_q_valid << "\n";
+    }
+
+    DiscreteArmCfg q_near_a = rrtree_A->nearestNeighbor(q_rand);
+    DiscreteArmCfg q_new_a = extendNewCfg(q_near_a, q_rand);
+
+    // std::cout << "Nearest Neighbor found: ";
+    // printCfg(q_near);
+
+    if ((rrtree_A->doesNodeExist(q_new_a)) ||
+        extensionResult(map, x_size, y_size, numofDOFs, q_near_a, q_new_a) ==
+            ExtendResult::TRAPPED) {
+      // std::cout << "This node has already been added or is invalid.\n";
+      iters--;
+      continue;
+    }
+
+    rrtree_A->addNode(q_new_a, 0);
+    rrtree_A->setParent(q_new_a, q_near_a);
+
+    if (!validLine(map, x_size, y_size, q_new_a, q_near_a, numofDOFs)) {
+      std::cout << "DAnger1! not a valid line\n";
+      printCfg(q_new_a);
+      printCfg(q_near_a);
+      std::cout << "\n\n\n\n";
+    }
+
+    DiscreteArmCfg q_near_b = rrtree_B->nearestNeighbor(q_new_a);
+    DiscreteArmCfg q_new_final_b = q_near_b;
+
+    DiscreteArmCfg q_new_b = extendNewCfg(q_new_final_b, q_new_a);
+    ExtendResult result =
+        extensionResult(map, x_size, y_size, numofDOFs, q_new_final_b, q_new_b);
+    std::cout << "Result: ";
+    while (result == ExtendResult::ADVANCED) {
+      // DiscreteArmCfg q_new = extendNewCfg(q_near, q_rand);
+      q_new_final_b = q_new_b;
+      q_new_b = extendNewCfg(q_new_final_b, q_new_a);
+      result = extensionResult(map, x_size, y_size, numofDOFs, q_new_final_b,
+                               q_new_b);
+    }
+
+    // if (result == ExtendResult::REACHED) {
+    // q_new_final_b = q_new_a;
+    // }
+
+    if (q_new_final_b != q_near_b) {
+      rrtree_B->addNode(q_new_final_b, 0);
+      rrtree_B->setParent(q_new_final_b, q_near_b);
+
+      if (!validLine(map, x_size, y_size, q_new_final_b, q_near_b, numofDOFs)) {
+        std::cout << "DAnger2! not a valid line\n";
+        printCfg(q_new_final_b);
+        printCfg(q_near_b);
+        std::cout << "\n\n\n\n";
+      }
+    }
+
+    // if (q_new_final_b == q_near_b) {
+    // std::cout << "DAnger2! parent = neighbor";
+    // printCfg(q_near_b);
+    // std::cout << "\n\n\n\n";
+    // }
+
+    if (result == ExtendResult::REACHED) {
+      std::cout << "Plan found!\n";
+
+      ContinuousArmCfg q_new_a_cont = revertDiscretizationArmConfig(q_new_a);
+      auto reversed_plan_a =
+          rrtree_A->generateReversedPlan(q_new_a_cont); // FIX this
+
+      std::cout << "fsgdhjgkhjyrewqwewretyjtyw: ";
+      printCfg(q_new_a_cont);
+
+      ContinuousArmCfg q_new_b_cont = revertDiscretizationArmConfig(q_new_b);
+      auto reversed_plan_b =
+          rrtree_B->generateReversedPlan(q_new_b_cont); // FIX this
+
+      if (num_swaps % 2) {
+        std::cout << "The plans are in a reversed state\n";
+        reversed_plan_a.reverse();
+        reversed_plan_a.insert(reversed_plan_a.end(), reversed_plan_b.begin(),
+                               reversed_plan_b.end());
+        generateFinalPlan(reversed_plan_a, plan);
+        *planlength = reversed_plan_a.size();
+        return;
+      } else {
+        std::cout << "The plans are in a original state\n";
+        reversed_plan_b.reverse();
+        reversed_plan_b.insert(reversed_plan_b.end(), reversed_plan_a.begin(),
+                               reversed_plan_a.end());
+        generateFinalPlan(reversed_plan_b, plan);
+        *planlength = reversed_plan_b.size();
+        return;
+      }
+    }
+
+    rrtree_A.swap(rrtree_B);
+    num_swaps++;
+  }
+
+  std::list<ContinuousArmCfg> default_plan;
+  default_plan.push_back(arm_goal_cont);
+  default_plan.push_back(arm_start_cont);
+  generateFinalPlan(default_plan, plan);
+  *planlength = 2;
 }
 
 //*******************************************************************************************************************//
@@ -761,13 +960,160 @@ static void plannerRRTConnect(double *map, int x_size, int y_size,
 //                                                                                                                   //
 //*******************************************************************************************************************//
 
+long int getLineCost(DiscreteArmCfg q1, DiscreteArmCfg q2) {
+  long int cost = 0;
+
+  for (int i = 0; i < q1.size(); i++) {
+    cost += abs(q1[i] - q2[i]);
+  }
+
+  return cost;
+}
+
 static void plannerRRTStar(double *map, int x_size, int y_size,
                            double *armstart_anglesV_rad,
                            double *armgoal_anglesV_rad, int numofDOFs,
                            double ***plan, int *planlength) {
   /* TODO: Replace with your implementation */
-  plannerRRT(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad,
-          numofDOFs, plan, planlength);
+  // planner(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad,
+  // numofDOFs, plan, planlength);
+
+  std::vector<double> map_vec;
+  makeVector(map_vec, map, x_size * y_size);
+
+  ContinuousArmCfg arm_start_cont;
+  makeVector(arm_start_cont, armstart_anglesV_rad, numofDOFs);
+  DiscreteArmCfg arm_start = discretizeArmConfig(arm_start_cont);
+
+  ContinuousArmCfg arm_goal_cont;
+  makeVector(arm_goal_cont, armgoal_anglesV_rad, numofDOFs);
+  DiscreteArmCfg arm_goal = discretizeArmConfig(arm_goal_cont);
+
+  std::cout << "All vectors made\n";
+  std::cout << "Goal is to reach: ";
+  printCfg(arm_goal);
+
+  RRTree rrtree(arm_start_cont);
+
+  long int goal_cost = __INT64_MAX__;
+  DiscreteArmCfg goal_parent;
+
+  for (int iters = 0; iters < max_iters; iters++) {
+
+    if ((iters % 100) == 0) {
+      std::cout
+          << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+             "~~~~~~~~~~~~~~~~~~\n";
+      std::cout << "Iteration: " << iters << "\n";
+    }
+
+    bool is_q_valid = false;
+    DiscreteArmCfg q_rand;
+    while (!is_q_valid) {
+      q_rand = randomCfgGenerator(numofDOFs);
+      // std::cout << "Random node generated with angles: ";
+      // printCfg(q_rand);
+      // Set is_q_valid
+      is_q_valid = IsValidArmConfiguration(q_rand, map, x_size, y_size);
+      // std::cout << "Is this node valid? " << is_q_valid << "\n";
+    }
+
+    DiscreteArmCfg q_near = rrtree.nearestNeighbor(q_rand);
+    // std::cout << "Nearest Neighbor found: ";
+    // printCfg(q_near);
+
+    DiscreteArmCfg q_new = extendNewCfg(q_near, q_rand);
+
+    if ((rrtree.doesNodeExist(q_new)) ||
+        extensionResult(map, x_size, y_size, numofDOFs, q_near, q_new) ==
+            ExtendResult::TRAPPED) {
+      // std::cout << "This node has already been added or is invalid.\n";
+      continue;
+    }
+
+    std::list<DiscreteArmCfg> neighbors = rrtree.nearestNeighbors(q_new);
+
+    int lowest_cost = __INT_MAX__;
+    DiscreteArmCfg lowest_cost_neighbor;
+    for (auto neighbor : neighbors) {
+      long int cost =
+          getLineCost(neighbor, q_new) + rrtree.getNodeCost(neighbor);
+      if (cost < lowest_cost) {
+        lowest_cost = cost;
+        lowest_cost_neighbor = neighbor;
+      }
+    }
+
+    // if (lowest_cost_neighbor == arm_start) {
+    // std::cout << "The node ";
+    // printCfg(q_new);
+    // std::cout << "Is being connected to the start location";
+    // }
+
+    rrtree.addNode(q_new, lowest_cost);
+    rrtree.setParent(q_new, lowest_cost_neighbor);
+
+    // std::cout << "Added node: ";
+    // printCfg(q_new);
+    // std::cout << "With parent: ";
+    // printCfg(lowest_cost_neighbor);
+    // std::cout << "\n";
+    for (auto neighbor : neighbors) {
+      if (neighbor == lowest_cost_neighbor) {
+        continue;
+      }
+
+      long int previous_cost = rrtree.getNodeCost(neighbor);
+      long int new_cost =
+          getLineCost(q_new, neighbor) + rrtree.getNodeCost(q_new);
+      if (new_cost < previous_cost) {
+        // cost = lowest_cost;
+        // lowest_cost_neighbor = neighbor;
+        rrtree.setParent(neighbor, q_new);
+      }
+    }
+
+    if (validLine(map, x_size, y_size, q_new, arm_goal, numofDOFs)) {
+      std::cout << "Goal reached\n";
+      long int cost = rrtree.getNodeCost(q_new) + getLineCost(q_new, arm_goal);
+      // rrtree.addNode(arm_goal, cost);
+      // rrtree.setParent(arm_goal, q_new);
+      // std::cout << "Added goal node: ";
+      // printCfg(arm_goal);
+      // std::cout << "With parent: ";
+      // printCfg(q_new);
+      // std::cout << "\n";
+      // goal_reached = true;
+
+      if (cost < goal_cost) {
+        goal_cost = cost;
+        goal_parent = q_new;
+      }
+    }
+  }
+
+  if (goal_cost < __INT64_MAX__) {
+    std::cout << "We have found a goal, hence generating a proper plan";
+    printCfg(goal_parent);
+    rrtree.addNode(arm_goal, goal_cost);
+    rrtree.setParent(arm_goal, goal_parent);
+    std::cout << "Added goal node: ";
+    printCfg(arm_goal);
+    std::cout << "With parent: ";
+    printCfg(goal_parent);
+    std::cout << "\n";
+
+    auto reversed_plan = rrtree.generateReversedPlan(arm_goal_cont);
+    generateFinalPlan(reversed_plan, plan);
+    *planlength = reversed_plan.size();
+  } else {
+
+    std::list<ContinuousArmCfg> default_plan;
+    default_plan.push_back(arm_goal_cont);
+    default_plan.push_back(arm_start_cont);
+    generateFinalPlan(default_plan, plan);
+    *planlength = 2;
+  }
 }
 
 //*******************************************************************************************************************//
@@ -782,7 +1128,7 @@ static void plannerPRM(double *map, int x_size, int y_size,
                        double ***plan, int *planlength) {
   /* TODO: Replace with your implementation */
   plannerRRT(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad,
-          numofDOFs, plan, planlength);
+             numofDOFs, plan, planlength);
 }
 
 // clang-format off
@@ -820,7 +1166,7 @@ int main(int argc, char** argv) {
 	}
 
 	///////////////////////////////////////
-	//// Feel free to modify anything below. Be careful modifying anything above.
+	//// Feel free to modify anything below. B    e careful modifying anything above.
 
 	double** plan = NULL;
 	int planlength = 0;
