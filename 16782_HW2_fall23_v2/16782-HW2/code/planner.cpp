@@ -18,9 +18,6 @@
 #include <iostream> // cout, endl
 #include <fstream> // For reading/writing files
 #include <assert.h> 
-// #include<chrono>
-// #include<thread>
-
 
 /* Custom Includes */
 #include <memory>
@@ -340,7 +337,6 @@ static void planner(
         }
         if(!IsValidArmConfiguration((*plan)[i], numofDOFs, map, x_size, y_size) && firstinvalidconf) {
             firstinvalidconf = 1;
-            // printf("ERROR: Invalid arm configuration!!!\n");
         }
     }    
     *planlength = numofsamples;
@@ -363,19 +359,17 @@ void makeVector(std::vector<T> &result, T *data, int size) {
 
 // Parameters
 double resolution = 0.02; // radians per index
-int max_iters = 20000;
-// RRTStar takes 1 minute 30 seconds to run for max_iters = 25000
+int max_iters = 10000;
 int epsilon = 5;
-long int goal_distance_thresh = 10;
 long int seed = 34234;
-long int max_neighbor_distance = 50;
-long int num_prm_points = 100000;
+long int max_neighbor_distance = 10;
+long int max_prm_edge_distance = 50;
+long int num_prm_points = 25000;
 
 DiscreteArmCfg discretizeArmConfig(const ContinuousArmCfg &input) {
   DiscreteArmCfg result;
   result.reserve(input.size());
   for (int i = 0; i < input.size(); i++) {
-    // std::cout << "Fegr " << input[i] << "\n";
     result.push_back(std::floor(input[i] / resolution));
   }
 
@@ -419,7 +413,6 @@ static bool validLine(double *map, int x_size, int y_size, DiscreteArmCfg start,
     printf("the arm is already at the goal\n");
     return true;
   }
-  int firstinvalidconf = 1;
   for (i = 0; i < numofsamples; i++) {
     DiscreteArmCfg intermediate;
 
@@ -428,10 +421,7 @@ static bool validLine(double *map, int x_size, int y_size, DiscreteArmCfg start,
                                             (end[j] - start[j]));
     }
 
-    if (!IsValidArmConfiguration(intermediate, map, x_size, y_size) &&
-        firstinvalidconf) {
-      firstinvalidconf = 1;
-      // printf("ERROR: Invalid arm configuration!!!\n" );
+    if (!IsValidArmConfiguration(intermediate, map, x_size, y_size)) {
       return false;
     }
   }
@@ -449,8 +439,6 @@ typedef std::shared_ptr<NodeData> NodeDataPtr;
 
 struct NodeData {
   DiscreteArmCfg parent_;
-  // std::list<DiscreteArmCfg> children_;
-  // DiscreteArmCfg goal_;
   long int f_val;
   long int cost;
 };
@@ -513,8 +501,14 @@ static DiscreteArmCfg randomCfgGenerator(int num_DOFs) {
   return q;
 }
 
-DiscreteArmCfg extendNewCfg(const DiscreteArmCfg &q_near,
-                            const DiscreteArmCfg &q_rand) {
+enum class ExtendResult { ADVANCED, REACHED, TRAPPED };
+
+ExtendResult extendNewCfg(const DiscreteArmCfg &q_near,
+                          const DiscreteArmCfg &q_rand, DiscreteArmCfg &q_new,
+                          double *map, int x_size, int y_size, int numDOFs) {
+
+  q_new = DiscreteArmCfg();
+
   int max_angle_change = abs(q_near[0] - q_rand[0]);
 
   for (int i = 0; i < q_near.size(); i++) {
@@ -523,28 +517,24 @@ DiscreteArmCfg extendNewCfg(const DiscreteArmCfg &q_near,
     }
   }
 
-  // std::cout << "Max angle change is " << max_angle_change << "\n";
-
   double percent_interpolate = (epsilon * 1.0) / max_angle_change;
-  // std::cout << "Percent interpolation to do is " << percent_interpolate <<
-  // "\n";
 
   if (max_angle_change == 0 || percent_interpolate > 1) {
-    return q_rand;
+    q_new = q_rand;
+    return ExtendResult::REACHED;
   }
 
-  DiscreteArmCfg q_new;
-
-  // std::cout << "Calculating new angles\n";
   for (int i = 0; i < q_near.size(); i++) {
     int diff = q_rand[i] - q_near[i];
     int new_angle = std::floor(q_near[i] + percent_interpolate * diff);
-    // std::cout << new_angle << ", ";
     q_new.push_back(new_angle);
   }
-  // std::cout << "\n";
 
-  return q_new;
+  if (validLine(map, x_size, y_size, q_near, q_new, numDOFs)) {
+    return ExtendResult::ADVANCED;
+  } else {
+    return ExtendResult::TRAPPED;
+  }
 }
 
 long int distanceBetweenCfgs(const DiscreteArmCfg &q1,
@@ -570,6 +560,7 @@ void generateFinalPlan(const std::list<ContinuousArmCfg> &reversed_plan,
   *plan_to_fill = (double **)malloc((reversed_plan.size()) * sizeof(double *));
 
   int i = 0;
+  std::cout << "Generating and printing final plan:\n";
   for (auto it_ = reversed_plan.rbegin(); (it_ != reversed_plan.rend());
        it_++) {
     (*plan_to_fill)[i] = (double *)malloc(numDOFs * sizeof(double));
@@ -581,23 +572,6 @@ void generateFinalPlan(const std::list<ContinuousArmCfg> &reversed_plan,
     }
     i++;
   }
-
-  bool print_plan = false;
-
-  if (print_plan) {
-    std::cout << "The reversed plan fed to this was-\n";
-    for (auto it : reversed_plan) {
-      printCfg(it);
-    }
-
-    std::cout << "Plan generated-\n";
-    for (int i = 0; i < reversed_plan.size(); i++) {
-      for (int j = 0; j < numDOFs; j++) {
-        std::cout << (*plan_to_fill)[i][j] << ", ";
-      }
-      std::cout << "\n";
-    }
-  }
 }
 
 class RRTree {
@@ -606,18 +580,10 @@ public:
     start_ = start;
     auto start_discrete = discretizeArmConfig(start_);
     addNode(start_discrete, 0);
-    std::cout << "Added start node: ";
-    printCfg(start_discrete);
-    std::cout << "\n";
   }
 
   RRTree(DiscreteArmCfg start) {
-    start_ = revertDiscretizationArmConfig(start);
-    // auto start_discrete = start;
     addNode(start, 0);
-    std::cout << "Added start node: ";
-    printCfg(start);
-    std::cout << "\n";
   }
 
   DiscreteArmCfg nearestNeighbor(const DiscreteArmCfg &q) {
@@ -654,71 +620,47 @@ public:
 
   void setParent(DiscreteArmCfg &q, DiscreteArmCfg &parent) {
     if (node_map_.find(q) == node_map_.end()) {
-      std::cout << "Node not found!\n";
+      std::cout << "Node q: ";
+      printCfg(q);
+      std::cout << " not found! Setting Parent failed\n";
       return;
     }
 
     auto node = node_map_.at(q);
-
-    // if (!node->parent_.empty()) {
-    //   // This means that the node already has a parent
-    //   auto previous_parent = node_map_.at(node->parent_);
-    //   previous_parent->children_.remove(q);
-    // }
-
     node->parent_ = parent;
-    // node_map_[parent]->children_.push_back(q);
-  }
-
-  std::list<ContinuousArmCfg> generateReversedPlan(ContinuousArmCfg &goal) {
-    std::list<ContinuousArmCfg> reversed_plan;
-
-    std::cout << "Start and Goal are:";
-    printCfg(discretizeArmConfig(start_));
-    printCfg(discretizeArmConfig(goal));
-    std::cout << "\n";
-
-    reversed_plan.push_back(goal);
-    auto current = node_map_.at(discretizeArmConfig(goal))->parent_;
-
-    while (node_map_.at(current)->parent_.size() != 0) {
-      std::cout << "Pushing back: ";
-      printCfg(current);
-      std::cout << "\n";
-
-      // std::this_thread::sleep_for(std::chrono::seconds(1));
-      reversed_plan.push_back(revertDiscretizationArmConfig(current));
-      current = node_map_.at(current)->parent_;
-    }
-
-    reversed_plan.push_back(start_);
-    std::cout << "done pushing back\n";
-    return reversed_plan;
   }
 
   std::list<ContinuousArmCfg> generateReversedPlan(DiscreteArmCfg &goal) {
     std::list<ContinuousArmCfg> reversed_plan;
-
-    std::cout << "Start and Goal are:";
-    printCfg(discretizeArmConfig(start_));
-    printCfg(goal);
-    std::cout << "\n";
-
     reversed_plan.push_back(revertDiscretizationArmConfig(goal));
     auto current = node_map_.at(goal)->parent_;
 
-    while (node_map_.at(current)->parent_.size() != 0) {
-      std::cout << "Pushing back: ";
-      printCfg(current);
-      std::cout << "\n";
-
-      // std::this_thread::sleep_for(std::chrono::seconds(1));
+    while (current.size() != 0) {
       reversed_plan.push_back(revertDiscretizationArmConfig(current));
       current = node_map_.at(current)->parent_;
     }
 
-    reversed_plan.push_back(start_);
-    std::cout << "done pushing back\n";
+    if (!start_.empty()) {
+      reversed_plan.push_back(start_);
+    }
+
+    return reversed_plan;
+  }
+
+  std::list<ContinuousArmCfg> generateReversedPlan(ContinuousArmCfg &goal) {
+    std::list<ContinuousArmCfg> reversed_plan;
+    reversed_plan.push_back(goal);
+    auto current = node_map_.at(discretizeArmConfig(goal))->parent_;
+
+    while (node_map_.at(current)->parent_.size() != 0) {
+      reversed_plan.push_back(revertDiscretizationArmConfig(current));
+      current = node_map_.at(current)->parent_;
+    }
+
+    if (!start_.empty()) {
+      reversed_plan.push_back(start_);
+    }
+
     return reversed_plan;
   }
 
@@ -735,10 +677,9 @@ private:
   ContinuousArmCfg start_;
 };
 
-enum class ExtendResult { ADVANCED, REACHED, TRAPPED };
-
 ExtendResult extensionResult(double *map, int x_size, int y_size, int numofDOFs,
-                             DiscreteArmCfg q_near, DiscreteArmCfg q_new) {
+                             DiscreteArmCfg q_near, DiscreteArmCfg q_new,
+                             DiscreteArmCfg q_fin) {
   if (validLine(map, x_size, y_size, q_near, q_new, numofDOFs)) {
     if (q_near == q_new) {
       return ExtendResult::REACHED;
@@ -755,9 +696,6 @@ static void plannerRRT(double *map, int x_size, int y_size,
                        double *armgoal_anglesV_rad, int numofDOFs,
                        double ***plan, int *planlength) {
   /* TODO: Replace with your implementation */
-  // planner(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad,
-  // numofDOFs, plan, planlength);
-
   ContinuousArmCfg arm_start_cont;
   makeVector(arm_start_cont, armstart_anglesV_rad, numofDOFs);
   DiscreteArmCfg arm_start = discretizeArmConfig(arm_start_cont);
@@ -766,49 +704,34 @@ static void plannerRRT(double *map, int x_size, int y_size,
   makeVector(arm_goal_cont, armgoal_anglesV_rad, numofDOFs);
   DiscreteArmCfg arm_goal = discretizeArmConfig(arm_goal_cont);
 
-  std::cout << "All vectors made\n";
-
   RRTree rrtree(arm_start_cont);
 
   for (int iters = 0; iters < max_iters; iters++) {
-    // std::cout <<
-    // "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-    //  "~~~~~~~~~~~~~~~~~~\n";
 
     if ((iters % 100) == 0) {
       std::cout << "Iteration: " << iters << "\n";
+      std::cout
+          << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+             "~~~~~~~~~~~~~~~~~~\n";
     }
     bool is_q_valid = false;
     DiscreteArmCfg q_rand;
     while (!is_q_valid) {
       q_rand = randomCfgGenerator(numofDOFs);
-      // std::cout << "Random node generated with angles: ";
-      // printCfg(q_rand);
-      // Set is_q_valid
       is_q_valid = IsValidArmConfiguration(q_rand, map, x_size, y_size);
-      // std::cout << "Is this node valid? " << is_q_valid << "\n";
     }
 
     DiscreteArmCfg q_near = rrtree.nearestNeighbor(q_rand);
+    DiscreteArmCfg q_new;
+    auto result =
+        extendNewCfg(q_near, q_rand, q_new, map, x_size, y_size, numofDOFs);
 
-    // std::cout << "Nearest Neighbor found: ";
-    // printCfg(q_near);
-
-    DiscreteArmCfg q_new = extendNewCfg(q_near, q_rand);
-
-    if ((rrtree.doesNodeExist(q_new)) ||
-        extensionResult(map, x_size, y_size, numofDOFs, q_near, q_new) ==
-            ExtendResult::TRAPPED) {
-      // std::cout << "This node has already been added or is invalid.\n";
+    if ((rrtree.doesNodeExist(q_new)) || result == ExtendResult::TRAPPED) {
       continue;
     }
 
     rrtree.addNode(q_new, 0);
     rrtree.setParent(q_new, q_near);
-    // std::cout << "New node added with angles: ";
-    // printCfg(q_new);
-    // std::cout << "Its parent is set to: ";
-    // printCfg(q_near);
 
     if (validLine(map, x_size, y_size, q_new, arm_goal, numofDOFs)) {
       std::cout << "Reached goal\n";
@@ -818,8 +741,6 @@ static void plannerRRT(double *map, int x_size, int y_size,
       generateFinalPlan(reversed_plan, plan);
       *planlength = reversed_plan.size();
       return;
-    } else {
-      // std::cout << "Didn't reach goal\n";
     }
   }
 
@@ -828,6 +749,11 @@ static void plannerRRT(double *map, int x_size, int y_size,
   default_plan.push_back(arm_start_cont);
   generateFinalPlan(default_plan, plan);
   *planlength = 2;
+  std::cout << "\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+               "~~~~~~~~\n";
+  std::cout << "PLAN NOT FOUND! RETURNING DEFAULT\n";
+  std::cout << "\n\n\n\n\n\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+               "~~~~~~~~~~~~~~~~~~\n";
 }
 
 //*******************************************************************************************************************//
@@ -841,9 +767,6 @@ static void plannerRRTConnect(double *map, int x_size, int y_size,
                               double *armgoal_anglesV_rad, int numofDOFs,
                               double ***plan, int *planlength) {
   /* TODO: Replace with your implementation */
-  // plannerRRT(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad,
-  //            numofDOFs, plan, planlength);
-
   ContinuousArmCfg arm_start_cont;
   makeVector(arm_start_cont, armstart_anglesV_rad, numofDOFs);
   DiscreteArmCfg arm_start = discretizeArmConfig(arm_start_cont);
@@ -852,18 +775,8 @@ static void plannerRRTConnect(double *map, int x_size, int y_size,
   makeVector(arm_goal_cont, armgoal_anglesV_rad, numofDOFs);
   DiscreteArmCfg arm_goal = discretizeArmConfig(arm_goal_cont);
 
-  std::cout << "All vectors made\n";
-
   auto rrtree_A = std::make_shared<RRTree>(arm_start_cont);
   auto rrtree_B = std::make_shared<RRTree>(arm_goal_cont);
-  // RRTree rrtree_goal;
-  // rrtree_A->addNode(arm_start, 0);
-  // std::cout << "Added start node to tree 1:";
-  // printCfg(arm_start);
-
-  // rrtree_B->addNode(arm_goal, 0);
-  // std::cout << "Added goal node to tree 2:";
-  // printCfg(arm_goal);
 
   long int num_swaps = 0;
 
@@ -878,89 +791,48 @@ static void plannerRRTConnect(double *map, int x_size, int y_size,
     DiscreteArmCfg q_rand;
     while (!is_q_valid) {
       q_rand = randomCfgGenerator(numofDOFs);
-      // std::cout << "Random node generated with angles: ";
-      // printCfg(q_rand);
-      // Set is_q_valid
       is_q_valid = IsValidArmConfiguration(q_rand, map, x_size, y_size);
-      // std::cout << "Is this node valid? " << is_q_valid << "\n";
     }
 
     DiscreteArmCfg q_near_a = rrtree_A->nearestNeighbor(q_rand);
-    DiscreteArmCfg q_new_a = extendNewCfg(q_near_a, q_rand);
-
-    // std::cout << "Nearest Neighbor found: ";
-    // printCfg(q_near);
+    DiscreteArmCfg q_new_a;
+    auto result_a =
+        extendNewCfg(q_near_a, q_rand, q_new_a, map, x_size, y_size, numofDOFs);
 
     if ((rrtree_A->doesNodeExist(q_new_a)) ||
-        extensionResult(map, x_size, y_size, numofDOFs, q_near_a, q_new_a) ==
-            ExtendResult::TRAPPED) {
-      // std::cout << "This node has already been added or is invalid.\n";
+        result_a == ExtendResult::TRAPPED) {
       continue;
     }
 
     rrtree_A->addNode(q_new_a, 0);
     rrtree_A->setParent(q_new_a, q_near_a);
 
-    // if (!validLine(map, x_size, y_size, q_new_a, q_near_a, numofDOFs)) {
-    //   std::cout << "DAnger1! not a valid line\n";
-    //   printCfg(q_new_a);
-    //   printCfg(q_near_a);
-    //   std::cout << "\n\n\n\n";
-    // }
-
     DiscreteArmCfg q_near_b = rrtree_B->nearestNeighbor(q_new_a);
     DiscreteArmCfg q_new_final_b = q_near_b;
 
-    DiscreteArmCfg q_new_b = extendNewCfg(q_new_final_b, q_new_a);
-    ExtendResult result =
-        extensionResult(map, x_size, y_size, numofDOFs, q_new_final_b, q_new_b);
-    std::cout << "Result: ";
-    while (result == ExtendResult::ADVANCED) {
-      // DiscreteArmCfg q_new = extendNewCfg(q_near, q_rand);
-      q_new_final_b = q_new_b;
-      q_new_b = extendNewCfg(q_new_final_b, q_new_a);
-      result = extensionResult(map, x_size, y_size, numofDOFs, q_new_final_b,
-                               q_new_b);
-    }
+    DiscreteArmCfg q_new_b;
+    auto result_b = extendNewCfg(q_new_final_b, q_new_a, q_new_b, map, x_size,
+                                 y_size, numofDOFs);
 
-    // if (result == ExtendResult::REACHED) {
-    // q_new_final_b = q_new_a;
-    // }
+    long long int d = 0;
+    while (result_b == ExtendResult::ADVANCED) {
+      q_new_final_b = q_new_b;
+      result_b = extendNewCfg(q_new_final_b, q_new_a, q_new_b, map, x_size,
+                              y_size, numofDOFs);
+    }
 
     if (q_new_final_b != q_near_b) {
       rrtree_B->addNode(q_new_final_b, 0);
       rrtree_B->setParent(q_new_final_b, q_near_b);
-
-      if (!validLine(map, x_size, y_size, q_new_final_b, q_near_b, numofDOFs)) {
-        std::cout << "DAnger2! not a valid line\n";
-        printCfg(q_new_final_b);
-        printCfg(q_near_b);
-        std::cout << "\n\n\n\n";
-      }
     }
 
-    // if (q_new_final_b == q_near_b) {
-    // std::cout << "DAnger2! parent = neighbor";
-    // printCfg(q_near_b);
-    // std::cout << "\n\n\n\n";
-    // }
-
-    if (result == ExtendResult::REACHED) {
+    if (result_b == ExtendResult::REACHED) {
       std::cout << "Plan found!\n";
+      auto reversed_plan_a = rrtree_A->generateReversedPlan(q_new_a);
 
-      ContinuousArmCfg q_new_a_cont = revertDiscretizationArmConfig(q_new_a);
-      auto reversed_plan_a =
-          rrtree_A->generateReversedPlan(q_new_a_cont); // FIX this
-
-      std::cout << "fsgdhjgkhjyrewqwewretyjtyw: ";
-      printCfg(q_new_a_cont);
-
-      ContinuousArmCfg q_new_b_cont = revertDiscretizationArmConfig(q_new_b);
-      auto reversed_plan_b =
-          rrtree_B->generateReversedPlan(q_new_b_cont); // FIX this
+      auto reversed_plan_b = rrtree_B->generateReversedPlan(q_new_final_b);
 
       if (num_swaps % 2) {
-        std::cout << "The plans are in a reversed state\n";
         reversed_plan_a.reverse();
         reversed_plan_a.insert(reversed_plan_a.end(), reversed_plan_b.begin(),
                                reversed_plan_b.end());
@@ -968,7 +840,6 @@ static void plannerRRTConnect(double *map, int x_size, int y_size,
         *planlength = reversed_plan_a.size();
         return;
       } else {
-        std::cout << "The plans are in a original state\n";
         reversed_plan_b.reverse();
         reversed_plan_b.insert(reversed_plan_b.end(), reversed_plan_a.begin(),
                                reversed_plan_a.end());
@@ -987,6 +858,11 @@ static void plannerRRTConnect(double *map, int x_size, int y_size,
   default_plan.push_back(arm_start_cont);
   generateFinalPlan(default_plan, plan);
   *planlength = 2;
+  std::cout << "\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+               "~~~~~~~~\n";
+  std::cout << "PLAN NOT FOUND! RETURNING DEFAULT\n";
+  std::cout << "\n\n\n\n\n\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+               "~~~~~~~~~~~~~~~~~~\n";
 }
 
 //*******************************************************************************************************************//
@@ -1010,9 +886,6 @@ static void plannerRRTStar(double *map, int x_size, int y_size,
                            double *armgoal_anglesV_rad, int numofDOFs,
                            double ***plan, int *planlength) {
   /* TODO: Replace with your implementation */
-  // planner(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad,
-  // numofDOFs, plan, planlength);
-
   ContinuousArmCfg arm_start_cont;
   makeVector(arm_start_cont, armstart_anglesV_rad, numofDOFs);
   DiscreteArmCfg arm_start = discretizeArmConfig(arm_start_cont);
@@ -1043,23 +916,15 @@ static void plannerRRTStar(double *map, int x_size, int y_size,
     DiscreteArmCfg q_rand;
     while (!is_q_valid) {
       q_rand = randomCfgGenerator(numofDOFs);
-      // std::cout << "Random node generated with angles: ";
-      // printCfg(q_rand);
-      // Set is_q_valid
       is_q_valid = IsValidArmConfiguration(q_rand, map, x_size, y_size);
-      // std::cout << "Is this node valid? " << is_q_valid << "\n";
     }
 
     DiscreteArmCfg q_near = rrtree.nearestNeighbor(q_rand);
-    // std::cout << "Nearest Neighbor found: ";
-    // printCfg(q_near);
+    DiscreteArmCfg q_new;
+    auto result =
+        extendNewCfg(q_near, q_rand, q_new, map, x_size, y_size, numofDOFs);
 
-    DiscreteArmCfg q_new = extendNewCfg(q_near, q_rand);
-
-    if ((rrtree.doesNodeExist(q_new)) ||
-        extensionResult(map, x_size, y_size, numofDOFs, q_near, q_new) ==
-            ExtendResult::TRAPPED) {
-      // std::cout << "This node has already been added or is invalid.\n";
+    if ((rrtree.doesNodeExist(q_new)) || result == ExtendResult::TRAPPED) {
       continue;
     }
 
@@ -1076,20 +941,9 @@ static void plannerRRTStar(double *map, int x_size, int y_size,
       }
     }
 
-    // if (lowest_cost_neighbor == arm_start) {
-    // std::cout << "The node ";
-    // printCfg(q_new);
-    // std::cout << "Is being connected to the start location";
-    // }
-
     rrtree.addNode(q_new, lowest_cost);
     rrtree.setParent(q_new, lowest_cost_neighbor);
 
-    // std::cout << "Added node: ";
-    // printCfg(q_new);
-    // std::cout << "With parent: ";
-    // printCfg(lowest_cost_neighbor);
-    // std::cout << "\n";
     for (auto neighbor : neighbors) {
       if (neighbor == lowest_cost_neighbor) {
         continue;
@@ -1099,23 +953,12 @@ static void plannerRRTStar(double *map, int x_size, int y_size,
       long int new_cost =
           getLineCost(q_new, neighbor) + rrtree.getNodeCost(q_new);
       if (new_cost < previous_cost) {
-        // cost = lowest_cost;
-        // lowest_cost_neighbor = neighbor;
         rrtree.setParent(neighbor, q_new);
       }
     }
 
     if (validLine(map, x_size, y_size, q_new, arm_goal, numofDOFs)) {
-      std::cout << "Goal reached\n";
       long int cost = rrtree.getNodeCost(q_new) + getLineCost(q_new, arm_goal);
-      // rrtree.addNode(arm_goal, cost);
-      // rrtree.setParent(arm_goal, q_new);
-      // std::cout << "Added goal node: ";
-      // printCfg(arm_goal);
-      // std::cout << "With parent: ";
-      // printCfg(q_new);
-      // std::cout << "\n";
-      // goal_reached = true;
 
       if (cost < goal_cost) {
         goal_cost = cost;
@@ -1125,26 +968,22 @@ static void plannerRRTStar(double *map, int x_size, int y_size,
   }
 
   if (goal_cost < __INT64_MAX__) {
-    std::cout << "We have found a goal, hence generating a proper plan";
-    printCfg(goal_parent);
     rrtree.addNode(arm_goal, goal_cost);
     rrtree.setParent(arm_goal, goal_parent);
-    std::cout << "Added goal node: ";
-    printCfg(arm_goal);
-    std::cout << "With parent: ";
-    printCfg(goal_parent);
-    std::cout << "\n";
-
     auto reversed_plan = rrtree.generateReversedPlan(arm_goal_cont);
     generateFinalPlan(reversed_plan, plan);
     *planlength = reversed_plan.size();
   } else {
-
     std::list<ContinuousArmCfg> default_plan;
     default_plan.push_back(arm_goal_cont);
     default_plan.push_back(arm_start_cont);
     generateFinalPlan(default_plan, plan);
     *planlength = 2;
+    std::cout << "\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+                 "~~~~~~~~~~\n";
+    std::cout << "PLAN NOT FOUND! RETURNING DEFAULT\n";
+    std::cout << "\n\n\n\n\n\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+                 "~~~~~~~~~~~~~~~~~~~~\n";
   }
 }
 
@@ -1153,22 +992,12 @@ static void plannerRRTStar(double *map, int x_size, int y_size,
 //                                              PRM IMPLEMENTATION //
 //                                                                                                                   //
 //*******************************************************************************************************************//
-
-// class PRMNodeData {
-// public:
-// std::list<DiscreteArmCfg> neighbors;
-
-// std::map
-// };
-
 typedef std::shared_ptr<std::list<DiscreteArmCfg>> NeighborList;
 
 class PRMGraph {
 public:
   void addNode(DiscreteArmCfg &q) {
-    // auto data = std::make_shared<NodeData>();
     NeighborList neighbors = std::make_shared<std::list<DiscreteArmCfg>>();
-    // data->cost = cost;
     graph.insert({q, neighbors});
   }
 
@@ -1195,7 +1024,7 @@ public:
       }
 
       long int calculated_distance = distanceBetweenCfgs(it_.first, q);
-      if (calculated_distance < max_neighbor_distance) {
+      if (calculated_distance < max_prm_edge_distance) {
         nearest_neighbors.push_back(it_.first);
       }
     }
@@ -1203,9 +1032,24 @@ public:
     return nearest_neighbors;
   }
 
-  // DiscreteArmCfg getNearestConnectedNeighbor(const DiscreteArmCfg& q) {
+  DiscreteArmCfg getNearestConnectedNeighbor(double *map, int x_size,
+                                             int y_size, DiscreteArmCfg q,
+                                             int numofDOFs) {
+    DiscreteArmCfg nearest_neighbor;
+    long int distance = __INT64_MAX__;
+    for (auto neighbor : graph) {
+      if (neighbor.second->size() == 0) {
+        continue;
+      }
 
-  // }
+      if (validLine(map, x_size, y_size, q, neighbor.first, numofDOFs) &&
+          (distanceBetweenCfgs(neighbor.first, q) < distance)) {
+        nearest_neighbor = neighbor.first;
+        distance = distanceBetweenCfgs(neighbor.first, q);
+      }
+    }
+    return nearest_neighbor;
+  }
 
   bool doesNodeExist(const DiscreteArmCfg &q) {
     return (graph.find(q) != graph.end());
@@ -1251,26 +1095,12 @@ std::list<ContinuousArmCfg> aStarSearch(PRMGraph &graph, DiscreteArmCfg &start,
 
   while (!open_list.empty()) {
     auto expanded_node = open_list.top();
-
-    std::cout << "Node expanded:";
-    printCfg(expanded_node->first);
-    std::cout << "\n";
-
     open_list.pop();
-
     long int expanded_node_g = expanded_node->second.cost;
 
     if (expanded_node->first == goal) {
       std::cout << "PRM Goal found!\n";
       std::list<ContinuousArmCfg> plan;
-      // plan.push_back(goal);
-
-      // auto parent = expanded_node->second.parent_;
-      // while (parent.size() != 0) {
-      // plan.push_back(parent);
-
-      // }
-      // auto goal_cont = revertDiscretizationA rmConfig(goal);
 
       while (!open_list.empty()) {
         open_list.pop();
@@ -1281,11 +1111,6 @@ std::list<ContinuousArmCfg> aStarSearch(PRMGraph &graph, DiscreteArmCfg &start,
 
     for (auto connected_neighbor :
          (*graph.getConnectedNeighbors(expanded_node->first))) {
-
-      // std::cout << "Testing closed list for node: ";
-      // printCfg(connected_neighbor);
-      // std::cout << "\nResult: " << closed_list.count(connected_neighbor)
-      //           << "\n";
 
       if (explored.count(connected_neighbor) != 0) {
         continue;
@@ -1307,12 +1132,6 @@ std::list<ContinuousArmCfg> aStarSearch(PRMGraph &graph, DiscreteArmCfg &start,
       search_tree.setParent(connected_neighbor, expanded_node->first);
       connected_neighbor_data.parent_ = expanded_node->first;
 
-      if (connected_neighbor == DiscreteArmCfg({29})) {
-        std::cout << "Offending node is being added.\n";
-        std::cout << "Its parent is ";
-        printCfg(expanded_node->first);
-      }
-
       open_list.push(connected_neighbor_node);
       explored.insert(connected_neighbor);
     }
@@ -1326,9 +1145,6 @@ static void plannerPRM(double *map, int x_size, int y_size,
                        double *armgoal_anglesV_rad, int numofDOFs,
                        double ***plan, int *planlength) {
   /* TODO: Replace with your implementation */
-  // plannerRRT(map, x_size, y_size, armstart_anglesV_rad, armgoal_anglesV_rad,
-  //  numofDOFs, plan, planlength);
-
   ContinuousArmCfg arm_start_cont;
   makeVector(arm_start_cont, armstart_anglesV_rad, numofDOFs);
   DiscreteArmCfg arm_start = discretizeArmConfig(arm_start_cont);
@@ -1354,20 +1170,10 @@ static void plannerPRM(double *map, int x_size, int y_size,
     }
 
     graph.addNode(q_rand);
-    // std::cout << "Added node: ";
-    // printCfg(q_rand);
-
     auto neighbors = graph.getNearestNeighbors(q_rand);
     for (auto neighbor : neighbors) {
-      // std::cout << "Checking neighbor:";
-      // printCfg(neighbor);
       if (validLine(map, x_size, y_size, neighbor, q_rand, numofDOFs)) {
         graph.addEdge(q_rand, neighbor);
-        // std::cout << "Added edge: \n";
-        // printCfg(q_rand);
-        // std::cout << " to ";
-        // printCfg(neighbor);
-        // std::cout << "\n";
       }
     }
   }
@@ -1376,39 +1182,10 @@ static void plannerPRM(double *map, int x_size, int y_size,
   std::list<ContinuousArmCfg> generated_plan;
   generated_plan.push_back(arm_goal_cont);
 
-  auto goal_neighbors = graph.getNearestNeighbors(arm_goal);
-  auto start_neighbors = graph.getNearestNeighbors(arm_start);
-  // std::cout << "Starting astar start search with neighbors " <<
-  // start_neighbors.size(); std::cout << "Starting astar goal search with
-  // neighbors " << goal_neighbors.size();
-
-  DiscreteArmCfg astar_goal;
-  long int distance = __INT64_MAX__;
-  for (auto neighbor : goal_neighbors) {
-    if (validLine(map, x_size, y_size, arm_goal, neighbor, numofDOFs) &&
-        (getLineCost(arm_goal, neighbor) < distance)) {
-      distance = getLineCost(arm_goal, neighbor);
-      astar_goal = neighbor;
-    }
-  }
-
-  DiscreteArmCfg astar_start;
-  distance = __INT64_MAX__;
-  for (auto neighbor : start_neighbors) {
-    if (validLine(map, x_size, y_size, arm_start, neighbor, numofDOFs) &&
-        (getLineCost(arm_start, neighbor) < distance)) {
-      distance = getLineCost(arm_goal, neighbor);
-      astar_start = neighbor;
-    }
-  }
-
-  // std::cout << "The start for the Astar search will be: ";
-  // printCfg(astar_start);
-  // std::cout << "\n";
-
-  // std::cout << "The goal for the Astar search will be: ";
-  // printCfg(astar_goal);
-  // std::cout << "\n";
+  DiscreteArmCfg astar_goal = graph.getNearestConnectedNeighbor(
+      map, x_size, y_size, arm_goal, numofDOFs);
+  DiscreteArmCfg astar_start = graph.getNearestConnectedNeighbor(
+      map, x_size, y_size, arm_start, numofDOFs);
 
   std::list<ContinuousArmCfg> a_star_search_result;
 
@@ -1422,6 +1199,14 @@ static void plannerPRM(double *map, int x_size, int y_size,
   generated_plan.push_back(arm_start_cont);
   generateFinalPlan(generated_plan, plan);
   *planlength = generated_plan.size();
+
+  if (a_star_search_result.size() == 0) {
+    std::cout << "\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+                 "~~~~~~~~~~\n";
+    std::cout << "PLAN NOT FOUND! RETURNING DEFAULT\n";
+    std::cout << "\n\n\n\n\n\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+                 "~~~~~~~~~~~~~~~~~~~~\n";
+  }
 }
 
 // clang-format off
