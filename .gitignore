@@ -2,3 +2,4 @@
 .vscode
 *.png
 *.zip
+grader_out/
