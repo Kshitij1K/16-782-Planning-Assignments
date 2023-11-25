@@ -1,3 +1,5 @@
+// clang-format off
+
 #include <iostream>
 #include <fstream>
 // #include <boost/functional/hash.hpp>
@@ -6,6 +8,7 @@
 #include <set>
 #include <list>
 #include <unordered_map>
+#include <queue>
 #include <algorithm>
 #include <stdexcept>
 
@@ -394,6 +397,14 @@ public:
         cout << "***** Environment Created! *****" << endl;
         return os;
     }
+
+    unordered_set<GroundedCondition, GroundedConditionHasher, GroundedConditionComparator> get_initial_conditions() {
+      return initial_conditions;
+    }
+
+    unordered_set<GroundedCondition, GroundedConditionHasher, GroundedConditionComparator> get_goal_conditions() {
+      return goal_conditions;
+    }
 };
 
 class GroundedAction
@@ -740,22 +751,81 @@ Env* create_env(char* filename)
 
     return env;
 }
+// clang-format on
 
-list<GroundedAction> planner(Env* env)
-{
-    // TODO: INSERT YOUR PLANNER HERE
+typedef unordered_set<Condition, ConditionHasher, ConditionComparator> State;
 
-    // Blocks World example (CHANGE THIS)
-    // cout << endl << "CREATING DEFAULT PLAN" << endl;
-    list<GroundedAction> actions;
-    // actions.push_back(GroundedAction("MoveToTable", { "A", "B" }));
-    // actions.push_back(GroundedAction("Move", { "C", "Table", "A" }));
-    // actions.push_back(GroundedAction("Move", { "B", "Table", "C" }));
+struct NodeData {
+  State parent;
+  GroundedAction causing_action;
+  long int f_val;
+  long int g_val;
+};
 
-    Action d;
+typedef std::pair<State, NodeData> Node;
+typedef std::shared_ptr<Node> NodePtr;
 
-    return actions;
+long int heuristicFunction(const State &s, const State &goal);
+list<GroundedAction> validActions(const State &s);
+bool isGoalReached(const State &s, const State &goal);
+
+class NodeComparator {
+public:
+  bool operator()(NodePtr A, NodePtr B) {
+    return (A->second.f_val > B->second.f_val);
+  }
+};
+
+class StateHash {
+public:
+  std::size_t operator()(const State &s) const noexcept {
+    std::string string_of_conditions;
+
+    for (auto it : s) {
+      string_of_conditions.append(it.toString());
+    }
+
+    std::sort(string_of_conditions.begin(), string_of_conditions.end());
+
+    return std::hash<std::string>{}(string_of_conditions);
+  }
+};
+
+typedef std::priority_queue<NodePtr, std::vector<NodePtr>, NodeComparator>
+    OpenList;
+
+class Graph {
+public:
+  Graph(State start);
+  void addNode(State s, NodeData data);
+  void setParent(State child, State new_parent,
+                 GroundedAction new_causing_action);
+
+  long int getNodeCost(const State &s);
+
+private:
+  std::unordered_map<State, NodeData, StateHash> graph;
+};
+
+typedef std::priority_queue<NodePtr, std::vector<NodePtr>, NodeComparator>
+    OpenList;
+
+list<GroundedAction> planner(Env *env) {
+  // TODO: INSERT YOUR PLANNER HERE
+
+  
+
+  // Blocks World example (CHANGE THIS)
+  // cout << endl << "CREATING DEFAULT PLAN" << endl;
+  list<GroundedAction> actions;
+  // actions.push_back(GroundedAction("MoveToTable", { "A", "B" }));
+  // actions.push_back(GroundedAction("Move", { "C", "Table", "A" }));
+  // actions.push_back(GroundedAction("Move", { "B", "Table", "C" }));
+
+  return actions;
 }
+
+// clang-format off
 
 int main(int argc, char* argv[])
 {
