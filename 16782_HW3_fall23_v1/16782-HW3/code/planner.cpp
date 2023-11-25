@@ -753,27 +753,31 @@ Env* create_env(char* filename)
 }
 // clang-format on
 
-typedef unordered_set<Condition, ConditionHasher, ConditionComparator> State;
+typedef unordered_set<GroundedCondition, GroundedConditionHasher,
+                      GroundedConditionComparator>
+    State;
 
-struct NodeData {
+struct Node {
+  Node() : causing_action("", list<std::string>()){};
+
+  State state;
   State parent;
   GroundedAction causing_action;
-  long int f_val;
-  long int g_val;
+  long int f_val = INT64_MAX;
+  long int g_val = INT64_MAX;
+  bool is_expanded = false;
 };
 
-typedef std::pair<State, NodeData> Node;
 typedef std::shared_ptr<Node> NodePtr;
 
 long int heuristicFunction(const State &s, const State &goal);
 list<GroundedAction> validActions(const State &s);
+State getNextState(const State &curr_state, const GroundedAction &action);
 bool isGoalReached(const State &s, const State &goal);
 
 class NodeComparator {
 public:
-  bool operator()(NodePtr A, NodePtr B) {
-    return (A->second.f_val > B->second.f_val);
-  }
+  bool operator()(NodePtr A, NodePtr B) { return (A->f_val > B->f_val); }
 };
 
 class StateHash {
@@ -791,38 +795,97 @@ public:
   }
 };
 
-typedef std::priority_queue<NodePtr, std::vector<NodePtr>, NodeComparator>
-    OpenList;
-
-class Graph {
+class Tree {
 public:
-  Graph(State start);
-  void addNode(State s, NodeData data);
+  void addNode(State s, NodePtr data);
   void setParent(State child, State new_parent,
                  GroundedAction new_causing_action);
+  void setCost(State s, long int g);
+
+  NodePtr getNodeData(State s);
 
   long int getNodeCost(const State &s);
+  bool doesNodeExist(const State &s);
+
+  list<GroundedAction> constructPlan(const State &goal);
 
 private:
-  std::unordered_map<State, NodeData, StateHash> graph;
+  std::unordered_map<State, NodePtr, StateHash> graph;
 };
 
-typedef std::priority_queue<NodePtr, std::vector<NodePtr>, NodeComparator>
-    OpenList;
+typedef std::set<NodePtr, std::vector<NodePtr>, NodeComparator> OpenList;
 
 list<GroundedAction> planner(Env *env) {
   // TODO: INSERT YOUR PLANNER HERE
+  State start_state = env->get_initial_conditions();
+  State goal_state = env->get_goal_conditions();
 
-  
+  NodePtr start_node = std::make_shared<Node>();
+  start_node->state = start_state;
+  start_node->g_val = 0;
+  start_node->f_val = heuristicFunction(start_state, goal_state);
 
+  Tree tree;
+  tree.addNode(start_state, start_node);
+  OpenList open_list;
+  open_list.insert(start_node);
   // Blocks World example (CHANGE THIS)
   // cout << endl << "CREATING DEFAULT PLAN" << endl;
-  list<GroundedAction> actions;
+  while (!open_list.empty()) {
+    NodePtr expanded_node = *open_list.begin();
+    open_list.erase(open_list.begin());
+
+    if (isGoalReached(expanded_node->state, goal_state)) {
+      list<GroundedAction> actions;
+      actions = tree.constructPlan(expanded_node->state);
+      return actions;
+    }
+
+    auto available_actions = validActions(expanded_node->state);
+
+    for (auto action : available_actions) {
+      State neighbor = getNextState(expanded_node->state, action);
+
+      // if (tentative_g_val < tree.getNodeCost(expanded_node->state)) {
+      //   tree.setParent(neighbor, expanded_node->state, action);
+      // }
+
+      // if (!tree.doesNodeExist(neighbor)) {
+      //   NodePtr neighbor_node = std::make_shared<Node>();
+      //   neighbor_node->state = neighbor;
+      //   neighbor_node->g_val = expanded_node->g_val + 1;
+      //   neighbor_node->f_val = heuristicFunction(neighbor, goal_state);
+      //   tree.addNode(neighbor, neighbor_node);
+
+      //   open_list.insert(neighbor_node);
+      // } else {
+      //   long int tentative_g_val = expanded_node->g_val + 1;
+      //   if (tentative_g_val <)
+
+      // }
+
+      long int tentative_g_val = expanded_node->g_val + 1;
+
+      if (tentative_g_val < tree.getNodeCost(neighbor)) {
+        tree.setParent(neighbor, expanded_node->state, action);
+        tree.setCost(neighbor, tentative_g_val);
+
+        auto neighbor_itr = open_list.find(tree.getNodeData(neighbor));
+        if (neighbor_itr != open_list.end()) {
+          open_list.erase(neighbor_itr);
+        }
+
+        open_list.insert(tree.getNodeData(neighbor));
+      }
+
+    }
+  }
+
   // actions.push_back(GroundedAction("MoveToTable", { "A", "B" }));
   // actions.push_back(GroundedAction("Move", { "C", "Table", "A" }));
   // actions.push_back(GroundedAction("Move", { "B", "Table", "C" }));
 
-  return actions;
+  return list<GroundedAction>();
 }
 
 // clang-format off
