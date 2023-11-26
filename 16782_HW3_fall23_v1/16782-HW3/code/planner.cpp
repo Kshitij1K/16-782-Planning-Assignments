@@ -328,10 +328,11 @@ class Env
 private:
     unordered_set<GroundedCondition, GroundedConditionHasher, GroundedConditionComparator> initial_conditions;
     unordered_set<GroundedCondition, GroundedConditionHasher, GroundedConditionComparator> goal_conditions;
+
+public:
     unordered_set<Action, ActionHasher, ActionComparator> actions;
     unordered_set<string> symbols;
 
-public:
     void remove_initial_condition(GroundedCondition gc)
     {
         this->initial_conditions.erase(gc);
@@ -763,17 +764,12 @@ struct Node {
   State state;
   State parent;
   GroundedAction causing_action;
-  long int f_val = INT64_MAX;
-  long int g_val = INT64_MAX;
+  double f_val = __DBL_MAX__;
+  double g_val = __DBL_MAX__;
   bool is_expanded = false;
 };
 
 typedef std::shared_ptr<Node> NodePtr;
-
-long int heuristicFunction(const State &s, const State &goal);
-list<GroundedAction> validActions(const State &s);
-State getNextState(const State &curr_state, const GroundedAction &action);
-bool isGoalReached(const State &s, const State &goal);
 
 class NodeComparator {
 public:
@@ -797,54 +793,224 @@ public:
 
 class Tree {
 public:
-  void addNode(State s, NodePtr data);
-  void setParent(State child, State new_parent,
-                 GroundedAction new_causing_action);
-  void setCost(State s, long int g);
+  // void addNode(const State& s, NodePtr data);
+  Tree(Env *env, const State &start, const State &goal)
+      : start_state_(start), goal_state_(goal) {
 
-  NodePtr getNodeData(State s);
+    NodePtr start_node = std::make_shared<Node>();
+    start_node->state = start_state_;
+    start_node->g_val = 0;
+    start_node->f_val = heuristicFunction(start_state_);
+    // GroundedAction dummy_action = (*env->actions.begin()).get_preconditions;
+    setParent(start_state_, start_state_, GroundedAction("", list<string>()));
 
-  long int getNodeCost(const State &s);
-  bool doesNodeExist(const State &s);
+    for (Action it : env->actions) {
+      auto effects = it.get_effects();
+      long int literals_added = 0;
 
-  list<GroundedAction> constructPlan(const State &goal);
+      for (auto effect : effects) {
+        if (effect.get_truth()) {
+          literals_added++;
+        }
+      }
+
+      if (literals_added < min_literals_added) {
+        min_literals_added = literals_added;
+      }
+    }
+  }
+
+  void setParent(const State &child, const State &new_parent,
+                 const GroundedAction &new_causing_action) {
+    // int j = 8;
+
+    auto node_itr = graph_.find(child);
+
+    if (node_itr == graph_.end()) {
+      NodePtr node = std::make_shared<Node>();
+      node->state = child;
+      node->parent = new_parent;
+      node->g_val = graph_.at(new_parent)->g_val + 1;
+      node->f_val = node->g_val + heuristicFunction(child);
+      node->causing_action = new_causing_action;
+      graph_.insert({child, node});
+    } else {
+      node_itr->second->causing_action = new_causing_action;
+      node_itr->second->parent = new_parent;
+      node_itr->second->g_val = graph_.at(new_parent)->g_val + 1;
+      node_itr->second->f_val =
+          node_itr->second->g_val + heuristicFunction(child);
+    }
+  }
+  // void setCost(const State &s, long int g);
+
+  NodePtr getNodeData(const State &s) { return graph_.at(s); }
+
+  list<GroundedAction> constructPlan(const State &reached_goal_state) {
+    list<GroundedAction> plan;
+    auto curr_node_itr = graph_.find(reached_goal_state);
+
+    while (curr_node_itr->second->causing_action.get_name() == "") {
+      plan.push_front(curr_node_itr->second->causing_action);
+      curr_node_itr = graph_.find(curr_node_itr->second->parent);
+    }
+
+    return plan;
+  }
 
 private:
-  std::unordered_map<State, NodePtr, StateHash> graph;
+  double heuristicFunction(const State &s) {
+    double untrue_conditions = 0.0;
+    for (auto condition : goal_state_) {
+      if (s.find(condition) == s.end()) {
+        untrue_conditions += 1.0;
+      }
+    }
+
+    return (untrue_conditions) / min_literals_added;
+  }
+
+  const State start_state_;
+  const State goal_state_;
+
+  long int min_literals_added = INT64_MAX;
+
+  std::unordered_map<State, NodePtr, StateHash> graph_;
 };
 
-typedef std::set<NodePtr, std::vector<NodePtr>, NodeComparator> OpenList;
+typedef std::set<NodePtr, NodeComparator> OpenList;
+
+// list<list<int>> generatePermutations(int array_len, int perm_length) {}
+
+// list<GroundedAction> validActions(Env *env, const State &s) {
+//   list<GroundedAction> valid_actions;
+
+//   for (auto action : env->actions) {
+//   }
+// }
+
+void deleteCondition(State &s, GroundedCondition cond_to_delete);
+void addCondition(State &s, GroundedCondition cond_to_add);
+bool areConditionsSatisfied(const State &s, const State &conditions) {
+  for (auto condition : conditions) {
+    if (s.find(condition) == s.end()) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+list<string> getNewGroundedArgs(list<string> original_args,
+                                list<string> original_grounded_args,
+                                list<string> new_args) {
+  list<string> new_grounded_args;
+
+  for (auto arg : new_args) {
+    auto it = std::find(original_args.begin(), original_args.end(), arg);
+
+    int idx = std::distance(it, original_args.begin());
+
+    new_grounded_args.push_back(
+        *std::next(original_grounded_args.begin(), idx));
+  }
+
+  return new_grounded_args;
+}
+
+bool isActionValid(Env *env, const State &s,
+                   const GroundedAction &grounded_action); //{
+//   Action action = env->get_action(grounded_action.get_name());
+
+//   for (auto precondition:action.get_preconditions()) {
+
+//   }
+// }
+
+void generateActionArgs(Env *env, list<string>::iterator curr_itr,
+                        list<string> &args_permutation,
+                        list<list<string>> &args_list) {
+  if (curr_itr == args_permutation.end()) {
+    args_list.push_back(args_permutation);
+    return;
+  }
+
+  for (auto symbol : env->get_symbols()) {
+    *curr_itr = symbol;
+    generateActionArgs(env, std::next(curr_itr), args_permutation, args_list);
+  }
+}
+
+list<GroundedAction> generateValidActions(Env *env, const State &s) {
+  list<GroundedAction> valid_actions;
+
+  for (auto action : env->actions) {
+    list<list<string>> args_list;
+    list<string> args_permutation(action.get_args().size(), "");
+    generateActionArgs(env, args_permutation.begin(), args_permutation,
+                       args_list);
+
+    for (auto args : args_list) {
+      GroundedAction grounded_action(action.get_name(), args);
+      if (isActionValid(env, s, grounded_action)) {
+        valid_actions.push_back(grounded_action);
+      }
+    }
+  }
+
+  return valid_actions;
+}
+
+State getNextState(Env *env, const State &curr_state,
+                   const GroundedAction &grounded_action) {
+
+  auto action_args = env->get_action(grounded_action.get_name()).get_args();
+  auto grounded_action_args = grounded_action.get_arg_values();
+
+  State result = curr_state;
+
+  auto effects = env->get_action(grounded_action.get_name()).get_effects();
+  for (auto effect : effects) {
+    list<string> grounded_condition_args = getNewGroundedArgs(
+        action_args, grounded_action_args, effect.get_args());
+
+    GroundedCondition gc(effect.get_predicate(), grounded_condition_args);
+
+    if (effect.get_truth()) {
+      addCondition(result, gc);
+    } else {
+      deleteCondition(result, gc);
+    }
+  }
+
+  return result;
+}
 
 list<GroundedAction> planner(Env *env) {
   // TODO: INSERT YOUR PLANNER HERE
   State start_state = env->get_initial_conditions();
   State goal_state = env->get_goal_conditions();
 
-  NodePtr start_node = std::make_shared<Node>();
-  start_node->state = start_state;
-  start_node->g_val = 0;
-  start_node->f_val = heuristicFunction(start_state, goal_state);
-
-  Tree tree;
-  tree.addNode(start_state, start_node);
+  Tree tree(env, start_state, goal_state);
+  // tree.addNode(start_state, start_node);
   OpenList open_list;
-  open_list.insert(start_node);
+  open_list.insert(tree.getNodeData(start_state));
   // Blocks World example (CHANGE THIS)
   // cout << endl << "CREATING DEFAULT PLAN" << endl;
   while (!open_list.empty()) {
     NodePtr expanded_node = *open_list.begin();
     open_list.erase(open_list.begin());
 
-    if (isGoalReached(expanded_node->state, goal_state)) {
+    if (areConditionsSatisfied(expanded_node->state, goal_state)) {
       list<GroundedAction> actions;
       actions = tree.constructPlan(expanded_node->state);
       return actions;
     }
 
-    auto available_actions = validActions(expanded_node->state);
+    auto available_actions = generateValidActions(env, expanded_node->state);
 
     for (auto action : available_actions) {
-      State neighbor = getNextState(expanded_node->state, action);
+      State neighbor = getNextState(env, expanded_node->state, action);
 
       // if (tentative_g_val < tree.getNodeCost(expanded_node->state)) {
       //   tree.setParent(neighbor, expanded_node->state, action);
@@ -866,9 +1032,9 @@ list<GroundedAction> planner(Env *env) {
 
       long int tentative_g_val = expanded_node->g_val + 1;
 
-      if (tentative_g_val < tree.getNodeCost(neighbor)) {
+      if (tentative_g_val < tree.getNodeData(neighbor)->g_val) {
         tree.setParent(neighbor, expanded_node->state, action);
-        tree.setCost(neighbor, tentative_g_val);
+        // tree.setCost(neighbor, tentative_g_val);
 
         auto neighbor_itr = open_list.find(tree.getNodeData(neighbor));
         if (neighbor_itr != open_list.end()) {
@@ -877,7 +1043,6 @@ list<GroundedAction> planner(Env *env) {
 
         open_list.insert(tree.getNodeData(neighbor));
       }
-
     }
   }
 
